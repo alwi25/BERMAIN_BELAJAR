@@ -1,19 +1,40 @@
-name: Run AI Telegram Bot
+name: Run Telegram AI Bot
 
 on:
+  # Dapat dijalankan secara manual dari tab Actions di GitHub
   workflow_dispatch:
+  # Berjalan otomatis secara berkala (setiap 30 menit, lalu lanjut sesi berikutnya)
   schedule:
-    - cron: '0 */5 * * *'
+    - cron: "*/30 * * * *"
+
+concurrency:
+  group: telegram-ai-bot
+  cancel-in-progress: false
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-      - run: pip install -r requirements.txt
-      - env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        run: python main.py
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run Telegram AI Bot (28 Menit per Siklus)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN || '9148476943:AAGzzLXRtSFmxS5qPvPBndBfWssAJm4GvhY' }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL || 'https://9r.riihdyt.eu.cc/v1' }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY || 'sk-8e673f8a5ecbc3b7-gjs2d2-6970375c' }}
+          AI_MODEL: ${{ secrets.AI_MODEL || 'GLM-5.3_Uncensored' }}
+          MAX_RUNTIME_SECONDS: "1680"
+        run: python bot.py
