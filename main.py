@@ -20,7 +20,7 @@ TELEGRAM_BOT_TOKEN = os.getenv(
 )
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://oai.aihorde.net/v1").rstrip("/")
 AI_API_KEY = os.getenv("AI_API_KEY", "CvhQ3mpJgyjoFoiee79w3A")
-AI_MODEL = os.getenv("AI_MODEL", "deepseek/deepseek-v4-flash")
+AI_MODEL = os.getenv("AI_MODEL", "aihorde")
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
     "Kamu adalah asisten AI pintar yang ramah, membantu, dan menjawab dengan jelas.",
