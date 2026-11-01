@@ -33,6 +33,6 @@ jobs:
           TELEGRAM_BOT_TOKEN: "9148476943:AAGzzLXRtSFmxS5qPvPBndBfWssAJm4GvhY"
           AI_BASE_URL: "https://api.crown.ai.id/v1"
           AI_API_KEY: "crown-27f7af7aab27f07dfe005f97c6549138"
-          AI_MODEL: "aihorde"
+          AI_MODEL: "zai-org/GLM-5.3-Flash"
           MAX_RUNTIME_SECONDS: "1680"
         run: python main.py
