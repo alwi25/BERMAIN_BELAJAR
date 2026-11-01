@@ -18,8 +18,57 @@ TELEGRAM_BOT_TOKEN = os.getenv(
     "TELEGRAM_BOT_TOKEN",
     "9148476943:AAGzzLXRtSFmxS5qPvPBndBfWssAJm4GvhY",
 )
-AI_BASE_URL = os.getenv("AI_BASE_URL", "https://9r.riihdyt.eu.cc/v1'").rstrip("/")
-AI_API_KEY = os.getenv("AI_API_KEY", "sk-8e673f8a5ecbc3b7-lubf93-a2c7984d")
+AI_BASE_URL = os.getenv("AI_BASE_URL", "https://oai.aihorde.net/v1'").rstrip("/")
+AI_API_KEY = os.getenv("AI_API_KEY", "M3kYINMj4vl6ihSvbMwKTg
+Oe8HnxGvO7A8UlWRXShsnA
+cSw8UvVKN8yijAVovn004Q
+SJ8v037p5JJi1L1WGTQUwQ
+PQJbYPspO5PQFVjpnyh7RQ
+hymsYotamnwuK3N4v5JyIw
+UQdqiFiwcIpfICOgS4U3pQ
+Ab2Yt4uW2k6ZTiGPw2xkGg
+E9RFGjRud2NhoRL9zEsT0A
+DTGlKEZI0reu6RRVNBr2vA
+kHW6GZN0YSseYjKoUOR3zQ
+KosVoQvdL6WUxfesOwbpQg
+KyrPEN4ZzdUTZmuy2sNvzw
+U7lEDJYXJazNTIpLXHxRtg
+yb47zJzD0oOwiPjPS6BQWw
+Tg0kwYx0rFWqEkDYX2Y48g
+XUVngzGfU8FYoDnw3fjWbw
+qeNQLpIAechsXvKpcItcBg
+AsL3bs4Lj6OGcP8QM2MhaQ
+7IxiuO5o32zSXdTwlPoevg
+c7j5Yc3t201Hchgfl7dPSA
+cru0sTYajGXbEY4hl7ydUg
+OsqCe3tsKbTeiaEMFVLmQQ
+E6C0VeqB0oM9sgOe3BIcxA
+ytNI3Cw6SjJiBotcVolqGw
+idtdcFxO0FgTQ4wld1nt2Q
+imxMnGjDhkzlOPF4uesstw
+eRllKTZnDFBzLZTbNwqvTA
+EcQXbdctr9CPon1gJS6vMQ
+Sc1GAEIJMXkqguXS1UHF9A
+171iZxcsuHdTGWdw4bitiQ
+H1pWIYBs4A9MH94o9iJWMw
+032q94llwsQ3IjiK9i2utQ
+E6fRBHWSYfvP9FB210BGwg
+BalPONUT9iPRjVF2f0FLyg
+g9Yngse1TFhUwS7Dp71nMg
+iJOj0aRXS4xqCGnpuhhpAw
+mrhpDaIymh2ETtpNw31EXw
+1WLLogwf2OADzGQW96uYPQ
+biW3Phobv0FNyjkEU1rGRQ
+QJ3W9hcnOKwNE8BPv3Va9w
+fTFzbHuHNMOm7A7lUorOKw
+eAnJHvJdzcpL9MblhDSXSA
+8RIb5p27MyVyEMcWhxlLTQ
+DErbgD0TrBcDmDqFMQKeRw
+EkYLUYASxUYFMq9axkRmIA
+S9iw47UVEQJdl20fpHwNoQ
+pw7oQFXLGzDvuEx7M6ooFA
+xdV6UR6n77wF541FTl6GTA
+CvhQ3mpJgyjoFoiee79w3A")
 AI_MODEL = os.getenv("AI_MODEL", "deepseek/deepseek-v4-flash")
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
