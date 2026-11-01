@@ -10,7 +10,7 @@ API_KEY = "sk-8e673f8a5ecbc3b7-gjs2d2-6970375c"
 MODEL_NAME = "GLM-5.3_Uncensored"
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-client = OpenAI(base_url=BASE_URL, api_key=API_KEY)
+client = OpenAI(base_url=BASE_URL, api_key=9148476943:AAGzzLXRtSFmxS5qPvPBndBfWssAJm4GvhY)
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
