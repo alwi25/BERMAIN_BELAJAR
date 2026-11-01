@@ -33,8 +33,8 @@ jobs:
       - name: Run Telegram AI Bot (28 Menit per Siklus)
         env:
        TELEGRAM_BOT_TOKEN: "9148476943:AAGzzLXRtSFmxS5qPvPBndBfWssAJm4GvhY"
-       AI_BASE_URL: "https://api.y-api.bestvirtualgoods.com/v1"
-       AI_API_KEY: "TEMPEL_HASIL_COPY_DARI_WEB_Y_API_DI_SINI"
-       AI_MODEL: "deepseek/deepseek-v4-flash"
+       AI_BASE_URL = "https://api.y-api.bestvirtualgoods.com/v1"
+AI_API_KEY = "sk-Rhyk1b33vv00Z1uDAvuC9MKNQKarui6lgEJDLTPbXJtnFXa3"
+AI_MODEL = "deepseek/deepseek-v4-flash"
        MAX_RUNTIME_SECONDS: "1680"
      run: python main.py
