@@ -18,9 +18,9 @@ TELEGRAM_BOT_TOKEN = os.getenv(
     "TELEGRAM_BOT_TOKEN",
     "9148476943:AAGzzLXRtSFmxS5qPvPBndBfWssAJm4GvhY",
 )
-AI_BASE_URL = os.getenv("AI_BASE_URL", "https://9r.riihdyt.eu.cc/v1").rstrip("/")
-AI_API_KEY = os.getenv("AI_API_KEY", "sk-8e673f8a5ecbc3b7-gjs2d2-6970375c")
-AI_MODEL = os.getenv("AI_MODEL", "GLM-5.3_Uncensored")
+AI_BASE_URL = "https://api.y-api.bestvirtualgoods.com/v1"
+AI_API_KEY = "sk-Rhyk1b33vv00Z1uDAvuC9MKNQKarui6lgEJDLTPbXJtnFXa3"
+AI_MODEL = "deepseek/deepseek-v4-flash"
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
     "Kamu adalah asisten AI pintar yang ramah, membantu, dan menjawab dengan jelas.",
