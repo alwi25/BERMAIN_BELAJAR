@@ -37,4 +37,4 @@ jobs:
           AI_API_KEY: ${{ secrets.AI_API_KEY || 'sk-8e673f8a5ecbc3b7-gjs2d2-6970375c' }}
           AI_MODEL: ${{ secrets.AI_MODEL || 'GLM-5.3_Uncensored' }}
           MAX_RUNTIME_SECONDS: "1680"
-        run: python bot.py
+        run: python main.py
