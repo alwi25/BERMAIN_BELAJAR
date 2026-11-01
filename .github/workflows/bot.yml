@@ -32,7 +32,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: "9148476943:AAGzzLXRtSFmxS5qPvPBndBfWssAJm4GvhY"
           AI_BASE_URL: "https://9r.riihdyt.eu.cc/v1"
-          AI_API_KEY: "sk-8e673f8a5ecbc3b7-gjs2d2-6970375cc"
+          AI_API_KEY: "sk-8e673f8a5ecbc3b7-lubf93-a2c7984d"
           AI_MODEL: "GLM-5.3_Uncensored"
           MAX_RUNTIME_SECONDS: "1680"
         run: python main.py
