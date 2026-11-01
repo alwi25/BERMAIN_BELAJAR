@@ -18,7 +18,7 @@ TELEGRAM_BOT_TOKEN = os.getenv(
     "TELEGRAM_BOT_TOKEN",
     "9148476943:AAGzzLXRtSFmxS5qPvPBndBfWssAJm4GvhY",
 )
-AI_BASE_URL = os.getenv("AI_BASE_URL", "https://oai.aihorde.net/v1'").rstrip("/")
+AI_BASE_URL = os.getenv("AI_BASE_URL", "https://oai.aihorde.net/v1").rstrip("/")
 AI_API_KEY = os.getenv("AI_API_KEY", "CvhQ3mpJgyjoFoiee79w3A")
 AI_MODEL = os.getenv("AI_MODEL", "deepseek/deepseek-v4-flash")
 SYSTEM_PROMPT = os.getenv(
