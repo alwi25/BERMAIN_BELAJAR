@@ -19,7 +19,7 @@ TELEGRAM_BOT_TOKEN = os.getenv(
     "9148476943:AAGzzLXRtSFmxS5qPvPBndBfWssAJm4GvhY",
 )
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.y-api.bestvirtualgoods.com/v1").rstrip("/")
-AI_API_KEY = os.getenv("AI_API_KEY", "sk-8e673f8a5ecbc3b7-gjs2d2-6970375c")
+AI_API_KEY = os.getenv("AI_API_KEY", "sk-e18dedc3c3c39eae32dee153939aadddd9a7a9befaac4758")
 AI_MODEL = os.getenv("AI_MODEL", "deepseek/deepseek-v4-flash")
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
