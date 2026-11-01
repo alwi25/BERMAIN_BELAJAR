@@ -32,7 +32,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: "9148476943:AAGzzLXRtSFmxS5qPvPBndBfWssAJm4GvhY"
           AI_BASE_URL: "https://api.y-api.bestvirtualgoods.com/v1"
-          AI_API_KEY: "sk-Rhyk1b33vv00Z1uDAvuC9MKNQKarui6lgEJDLTPbXJtnFXa3"
+          AI_API_KEY: "sk-e18dedc3c3c39eae32dee153939aadddd9a7a9befaac4758"
           AI_MODEL: "deepseek/deepseek-v4-flash"
           MAX_RUNTIME_SECONDS: "1680"
         run: python main.py
