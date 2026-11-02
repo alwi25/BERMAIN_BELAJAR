@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # Konfigurasi dari Environment Variables (dengan fallback sesuai detail yang diberikan)
 TELEGRAM_BOT_TOKEN = os.getenv(
     "TELEGRAM_BOT_TOKEN",
-    "9148476943:AAGzzLXRtSFmxS5qPvPBndBfWssAJm4GvhY",
+    "9148476943:AAFbOSDajennHitzCxhFSr6K4YrVeO_ajLw",
 )
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.crown.ai.id/v1").rstrip("/")
 AI_API_KEY = os.getenv("AI_API_KEY", "crown-27f7af7aab27f07dfe005f97c6549138")
