@@ -18,8 +18,8 @@ TELEGRAM_BOT_TOKEN = os.getenv(
     "TELEGRAM_BOT_TOKEN",
     "9148476943:AAFbOSDajennHitzCxhFSr6K4YrVeO_ajLw",
 )
-AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.xcode.ai.id/v1").rstrip("/")
-AI_API_KEY = os.getenv("AI_API_KEY", "kitsu-Ov2TVokinyD5SUGCVOUBSPRytLkw0BQL")
+AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.crown.ai.id/v1").rstrip("/")
+AI_API_KEY = os.getenv("AI_API_KEY", "crown-27f7af7aab27f07dfe005f97c6549138")
 AI_MODEL = os.getenv("AI_MODEL", "zai-org/GLM-5.3-Flash")
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
