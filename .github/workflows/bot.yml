@@ -32,7 +32,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: "9148476943:AAFbOSDajennHitzCxhFSr6K4YrVeO_ajLw"
           AI_BASE_URL: "https://api.xcode.ai.id/v1"
-          AI_API_KEY: "crown-27f7af7aab27f07dfe005f97c6549138"
+          AI_API_KEY: "kitsu-Ov2TVokinyD5SUGCVOUBSPRytLkw0BQL"
           AI_MODEL: "zai-org/GLM-5.3-Flash"
           MAX_RUNTIME_SECONDS: "1680"
         run: python main.py
