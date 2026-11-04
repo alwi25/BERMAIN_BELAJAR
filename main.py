@@ -18,9 +18,9 @@ TELEGRAM_BOT_TOKEN = os.getenv(
     "TELEGRAM_BOT_TOKEN",
     "9148476943:AAFbOSDajennHitzCxhFSr6K4YrVeO_ajLw",
 )
-AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.crown.ai.id/v1").rstrip("/")
-AI_API_KEY = os.getenv("AI_API_KEY", "crown-27f7af7aab27f07dfe005f97c6549138")
-AI_MODEL = os.getenv("AI_MODEL", "zai-org/GLM-5.3-Flash")
+AI_BASE_URL = os.getenv("AI_BASE_URL", "https://crowllm.com/v1").rstrip("/")
+AI_API_KEY = os.getenv("AI_API_KEY", "Fok2UxKQ9siKjfxs1i1vF2u886VpbbTvF30G6lGtVPtLDz3U")
+AI_MODEL = os.getenv("AI_MODEL", "deepseek-r1-distill-qwen-32b:free")
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
     "Kamu adalah asisten AI pintar yang ramah, membantu, dan menjawab dengan jelas.",
