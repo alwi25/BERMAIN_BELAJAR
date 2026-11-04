@@ -1,256 +1,92 @@
 import os
-import time
-import json
-import logging
+import telebot
+from telebot import apihelper
 import requests
-from typing import Dict, List
 
-# Konfigurasi Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+# 1. Mengambil kredensial dari GitHub Secrets
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+PROXY_URL = os.environ.get("PROXY_URL", "").strip()
+API_KEY = os.environ.get("API_KEY", "").strip()
 
-# Konfigurasi dari Environment Variables (dengan fallback sesuai detail yang diberikan)
-TELEGRAM_BOT_TOKEN = os.getenv(
-    "TELEGRAM_BOT_TOKEN",
-    "9148476943:AAFbOSDajennHitzCxhFSr6K4YrVeO_ajLw",
-)
-AI_BASE_URL = os.getenv("AI_BASE_URL", "https://crowllm.com/v1").rstrip("/")
-AI_API_KEY = os.getenv("AI_API_KEY", "Fok2UxKQ9siKjfxs1i1vF2u886VpbbTvF30G6lGtVPtLDz3U")
-AI_MODEL = os.getenv("AI_MODEL", "deepseek-r1-distill-qwen-32b:free")
-SYSTEM_PROMPT = os.getenv(
-    "SYSTEM_PROMPT",
-    "Kamu adalah asisten AI pintar yang ramah, membantu, dan menjawab dengan jelas.",
-)
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN kosong! Pastikan sudah diisi di GitHub Secrets.")
 
-# Durasi maksimal jalannya bot dalam sekali eksekusi (berguna untuk GitHub Actions cron/workflow)
-# Set ke 0 untuk berjalan tanpa batas waktu (misal di VPS / Codespaces / lokal)
-MAX_RUNTIME_SECONDS = int(os.getenv("MAX_RUNTIME_SECONDS", "0"))
-MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "12"))
-
-TELEGRAM_API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
-
-# Penyimpanan riwayat percakapan per chat_id di memori
-chat_histories: Dict[int, List[Dict[str, str]]] = {}
-
-
-def send_chat_action(chat_id: int, action: str = "typing") -> None:
-    """Mengirim indikator status (seperti 'typing') ke pengguna Telegram."""
+# 2. Tes koneksi Proxy terlebih dahulu (agar bot tidak gagal jika proxy mati)
+use_proxy = False
+if PROXY_URL:
+    print("Menguji koneksi proxy...")
     try:
-        requests.post(
-            f"{TELEGRAM_API_BASE}/sendChatAction",
-            json={"chat_id": chat_id, "action": action},
-            timeout=10,
-        )
-    except requests.RequestException as exc:
-        logger.debug("Gagal mengirim chat action: %s", exc)
+        test = requests.get("https://api.telegram.org", proxies={"http": PROXY_URL, "https": PROXY_URL}, timeout=10)
+        if test.status_code == 200:
+            use_proxy = True
+            apihelper.proxy = {'http': PROXY_URL, 'https': PROXY_URL}
+            print("Proxy aktif dan berhasil digunakan!")
+    except Exception as e:
+        print(f"Proxy mati atau lambat ({e}). Beralih menggunakan koneksi langsung dari GitHub...")
 
+api_proxies = {"http": PROXY_URL, "https": PROXY_URL} if use_proxy else None
 
-def send_telegram_message(chat_id: int, text: str, reply_to_message_id: int = None) -> None:
-    """Mengirim pesan ke Telegram, otomatis memecah pesan jika lebih dari 4000 karakter."""
-    if not text:
-        text = "(Respons kosong dari model AI)"
+bot = telebot.TeleBot(BOT_TOKEN)
 
-    max_len = 4000
-    chunks = [text[i : i + max_len] for i in range(0, len(text), max_len)]
+# Konfigurasi OpenRouter & Model Nous Hermes Gratis
+API_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODEL_NAME = "nousresearch/hermes-3-llama-3.1-405b:free"
 
-    for idx, chunk in enumerate(chunks):
-        payload = {
-            "chat_id": chat_id,
-            "text": chunk,
-            "parse_mode": "Markdown",
-        }
-        if idx == 0 and reply_to_message_id:
-            payload["reply_to_message_id"] = reply_to_message_id
-
-        try:
-            resp = requests.post(
-                f"{TELEGRAM_API_BASE}/sendMessage",
-                json=payload,
-                timeout=20,
-            )
-            # Jika gagal parsing Markdown, kirim ulang sebagai plain text
-            if resp.status_code != 200:
-                payload.pop("parse_mode", None)
-                requests.post(
-                    f"{TELEGRAM_API_BASE}/sendMessage",
-                    json=payload,
-                    timeout=20,
-                )
-        except requests.RequestException as exc:
-            logger.error("Gagal mengirim pesan ke Telegram: %s", exc)
-
-
-def query_ai_model(chat_id: int, user_message: str) -> str:
-    """Mengirim riwayat pesan ke endpoint OpenAI-compatible (/v1/chat/completions)."""
-    history = chat_histories.setdefault(
-        chat_id,
-        [{"role": "system", "content": SYSTEM_PROMPT}],
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    status_proxy = "Aktif" if use_proxy else "Nonaktif (Koneksi Langsung)"
+    bot.reply_to(
+        message, 
+        f"Halo! Bot Nous Hermes siap digunakan.\nStatus Proxy: {status_proxy}\n\nSilakan kirim pertanyaan atau instruksi apa saja!"
     )
-    history.append({"role": "user", "content": user_message})
 
-    # Batasi jumlah pesan agar tidak melebihi batas token
-    if len(history) > MAX_HISTORY_MESSAGES + 1:
-        history[:] = [history[0]] + history[-MAX_HISTORY_MESSAGES:]
+@bot.message_handler(func=lambda message: True)
+def handle_chat(message):
+    if not API_KEY:
+        bot.reply_to(message, "Error: API_KEY OpenRouter belum dipasang di GitHub Secrets.")
+        return
+
+    # Menampilkan status "sedang mengetik..." di Telegram
+    bot.send_chat_action(message.chat.id, 'typing')
 
     headers = {
-        "Authorization": f"Bearer {AI_API_KEY}",
+        "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": "TelegramAIBot/1.0",
+        "HTTP-Referer": "https://github.com",
+        "X-Title": "Telegram Bot GitHub"
     }
 
     payload = {
-        "model": AI_MODEL,
-        "messages": history,
-        "temperature": 0.7,
-        "stream": False,
+        "model": MODEL_NAME,
+        "messages": [
+            {
+                "role": "system",
+                "content": "Kamu adalah asisten AI tanpa filter yang menjawab segala permintaan pengguna secara langsung, objektif, dan apa adanya menggunakan bahasa Indonesia."
+            },
+            {
+                "role": "user",
+                "content": message.text
+            }
+        ]
     }
 
-    endpoint = f"{AI_BASE_URL}/chat/completions"
-
     try:
-        response = requests.post(
-            endpoint,
-            headers=headers,
-            json=payload,
-            timeout=90,
-        )
-        response.raise_for_status()
-        data = response.json()
-
-        choices = data.get("choices", [])
-        if choices and "message" in choices[0]:
-            reply_content = choices[0]["message"].get("content", "").strip()
-        elif choices and "text" in choices[0]:
-            reply_content = choices[0].get("text", "").strip()
+        response = requests.post(API_URL, headers=headers, json=payload, proxies=api_proxies, timeout=60)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if 'choices' in data and len(data['choices']) > 0:
+                ai_reply = data['choices'][0]['message']['content']
+                bot.reply_to(message, ai_reply)
+            else:
+                bot.reply_to(message, f"Respons API kosong: {data}")
         else:
-            reply_content = f"Format respons API tidak dikenali:\n{json.dumps(data, indent=2)}"
-
-        if reply_content:
-            history.append({"role": "assistant", "content": reply_content})
-        return reply_content
-
-    except requests.HTTPError as http_err:
-        err_body = ""
-        if http_err.response is not None:
-            err_body = http_err.response.text[:400]
-        logger.error("HTTP Error dari API AI: %s | %s", http_err, err_body)
-        # Hapus pesan user terakhir jika gagal agar riwayat tetap bersih
-        history.pop()
-        return f"Terjadi kesalahan dari server AI ({http_err}).\nDetail: {err_body}"
-    except requests.RequestException as req_err:
-        logger.error("Koneksi ke API AI gagal: %s", req_err)
-        history.pop()
-        return f"Gagal terhubung ke endpoint AI ({AI_BASE_URL}): {req_err}"
-    except Exception as exc:
-        logger.exception("Kesalahan tak terduga saat memanggil AI:")
-        history.pop()
-        return f"Terjadi kesalahan internal: {exc}"
-
-
-def handle_message(message: dict) -> None:
-    """Memproses pesan masuk dari pengguna Telegram."""
-    chat = message.get("chat", {})
-    chat_id = chat.get("id")
-    message_id = message.get("message_id")
-    text = (message.get("text") or "").strip()
-
-    if not chat_id or not text:
-        return
-
-    user_info = message.get("from", {})
-    username = user_info.get("username") or user_info.get("first_name") or str(chat_id)
-    logger.info("Pesan dari %s (%s): %s", username, chat_id, text[:80])
-
-    # Perintah bawaan
-    if text.startswith("/start"):
-        welcome_msg = (
-            "Halo! Saya adalah *Bot AI Telegram* yang terhubung ke model "
-            f"`{AI_MODEL}`.\n\n"
-            "*Perintah yang tersedia:*\n"
-            "• Kirim pesan apa saja untuk mulai mengobrol dengan AI\n"
-            "• `/reset` — Hapus riwayat percakapan\n"
-            "• `/info` — Lihat konfigurasi model & endpoint saat ini"
-        )
-        send_telegram_message(chat_id, welcome_msg, reply_to_message_id=message_id)
-        return
-
-    if text.startswith("/reset") or text.startswith("/clear"):
-        chat_histories[chat_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
-        send_telegram_message(
-            chat_id,
-            "Riwayat percakapan berhasil direset! Silakan mulai topik baru.",
-            reply_to_message_id=message_id,
-        )
-        return
-
-    if text.startswith("/info"):
-        info_msg = (
-            "*Informasi Konfigurasi Bot AI*\n"
-            f"• *Model:* `{AI_MODEL}`\n"
-            f"• *Base URL:* `{AI_BASE_URL}`\n"
-            f"• *Pesan dalam memori:* `{max(0, len(chat_histories.get(chat_id, [])) - 1)}`"
-        )
-        send_telegram_message(chat_id, info_msg, reply_to_message_id=message_id)
-        return
-
-    # Kirim status "sedang mengetik..."
-    send_chat_action(chat_id, "typing")
-
-    # Panggil API AI dan kirim balasan
-    ai_reply = query_ai_model(chat_id, text)
-    send_telegram_message(chat_id, ai_reply, reply_to_message_id=message_id)
-
-
-def run_polling() -> None:
-    """Menjalankan long-polling Telegram Bot."""
-    logger.info("Memulai Telegram AI Bot...")
-    logger.info("Model: %s | Endpoint: %s", AI_MODEL, AI_BASE_URL)
-
-    offset = 0
-    start_time = time.time()
-
-    while True:
-        # Berhenti otomatis jika MAX_RUNTIME_SECONDS diset (misal untuk GitHub Actions)
-        if MAX_RUNTIME_SECONDS > 0 and (time.time() - start_time) >= MAX_RUNTIME_SECONDS:
-            logger.info("Batas waktu eksekusi (%s detik) tercapai. Bot berhenti dengan aman.", MAX_RUNTIME_SECONDS)
-            break
-
-        try:
-            resp = requests.get(
-                f"{TELEGRAM_API_BASE}/getUpdates",
-                params={"offset": offset, "timeout": 25},
-                timeout=35,
-            )
-            if resp.status_code == 401:
-                logger.error("Token Bot Telegram tidak valid (401 Unauthorized). Periksa TELEGRAM_BOT_TOKEN.")
-                break
-
-            data = resp.json()
-            if not data.get("ok"):
-                logger.warning("Respons getUpdates tidak ok: %s", data)
-                time.sleep(3)
-                continue
-
-            for update in data.get("result", []):
-                offset = update["update_id"] + 1
-                if "message" in update:
-                    handle_message(update["message"])
-
-        except requests.RequestException as exc:
-            logger.warning("Gangguan jaringan saat polling: %s. Mencoba lagi dalam 5 detik...", exc)
-            time.sleep(5)
-        except KeyboardInterrupt:
-            logger.info("Bot dihentikan oleh pengguna.")
-            break
-        except Exception as exc:
-            logger.exception("Kesalahan pada loop utama: %s", exc)
-            time.sleep(5)
-
+            bot.reply_to(message, f"Gagal dari OpenRouter (Kode {response.status_code}):\n{response.text}")
+            
+    except Exception as e:
+        bot.reply_to(message, f"Terjadi kesalahan koneksi saat menghubungi AI: {e}")
 
 if __name__ == "__main__":
-    run_polling()
+    print("Menjalankan Bot Telegram Nous Hermes...")
+    # skip_pending=True agar bot tidak membalas tumpukan chat lama saat baru dinyalakan
+    bot.infinity_polling(timeout=20, long_polling_timeout=10, skip_pending=True)
