@@ -8,7 +8,6 @@ on:
   schedule:
     - cron: '50 */5 * * *'
 
-# TAMBAHAN PENTING: Otomatis mematikan bot lama jika ada proses baru yang berjalan
 concurrency:
   group: telegram-bot-group
   cancel-in-progress: true
@@ -37,5 +36,6 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
           API_KEY: ${{ secrets.API_KEY }}
+          NOCTA_API_KEY: ${{ secrets.NOCTA_API_KEY }}
         run: |
           python -u main.py
