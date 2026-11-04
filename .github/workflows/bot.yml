@@ -4,15 +4,19 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: # Agar bisa dinyalakan manual lewat tombol
+  workflow_dispatch:
   schedule:
-    # Otomatis menyalakan ulang bot setiap 5 jam 50 menit agar jalan terus
     - cron: '50 */5 * * *'
+
+# TAMBAHAN PENTING: Otomatis mematikan bot lama jika ada proses baru yang berjalan
+concurrency:
+  group: telegram-bot-group
+  cancel-in-progress: true
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 350 # Berhenti rapi di menit 350 sebelum diputus paksa oleh GitHub
+    timeout-minutes: 350
 
     steps:
       - name: Checkout repository
