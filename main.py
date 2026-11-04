@@ -11,7 +11,8 @@ PROXY_URL = os.environ.get("PROXY_URL", "").strip()
 OPENROUTER_KEY = os.environ.get("API_KEY", "").strip()
 NOCTA_API_KEY = os.environ.get("NOCTA_API_KEY", "").strip()
 
-NOCTA_URL = "https://nocta-digital.web.id/v1/chat/completions"
+NOCTA_BASE = "https://nocta-digital.web.id/v1"
+NOCTA_URL = f"{NOCTA_BASE}/chat/completions"
 NOCTA_MODELS = ["deepseek-v4.1", "gpt-5.6-luna"]
 
 if not BOT_TOKEN:
@@ -25,9 +26,8 @@ if PROXY_URL:
         if test.status_code == 200:
             use_proxy = True
             apihelper.proxy = {'http': PROXY_URL, 'https': PROXY_URL}
-            print("Proxy aktif dan berhasil digunakan!")
-    except Exception as e:
-        print(f"Proxy dilewati ({e}). Menggunakan koneksi langsung...")
+    except Exception:
+        pass
 
 api_proxies = {"http": PROXY_URL, "https": PROXY_URL} if use_proxy else None
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -58,31 +58,83 @@ BACKUP_MODELS = get_openrouter_models()
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     status_proxy = "Aktif" if use_proxy else "Koneksi Langsung"
-    status_nocta = "Terhubung" if NOCTA_API_KEY else "Belum Diatur di Secrets"
-    daftar_model = ", ".join(NOCTA_MODELS)
+    status_nocta = "Terbaca" if NOCTA_API_KEY else "Kosong (Belum masuk bot.yml / Secrets)"
     
     pesan = (
         f"✅ Bot AI Uncensored Aktif!\n\n"
-        f"🔹 Server Utama: Nocta Digital ({status_nocta})\n"
-        f"🔹 Model Utama: {daftar_model}\n"
+        f"🔹 Kunci Nocta: {status_nocta}\n"
         f"🔹 Status Proxy: {status_proxy}\n\n"
-        f"💬 Ketik pesan apa saja untuk mulai chat tanpa filter.\n"
-        f"🎨 Ketik /gambar [deskripsi] untuk membuat gambar bebas sensor."
+        f"🛠 Ketik /ceknocta untuk memeriksa apakah API Key Nocta masih aktif atau mati.\n"
+        f"🎨 Ketik /gambar [deskripsi] untuk membuat foto.\n"
+        f"💬 Ketik pesan biasa untuk mulai ngobrol."
     )
     bot.reply_to(message, pesan)
 
-# 4. Handler Pembuat Gambar (Pollinations API)
+# 4. FITUR DIAGNOSA: Cek Status Asli Server & API Key Nocta
+@bot.message_handler(commands=['ceknocta'])
+def handle_cek_nocta(message):
+    if not NOCTA_API_KEY:
+        bot.reply_to(
+            message, 
+            "❌ Variabel NOCTA_API_KEY kosong!\n\n"
+            "Pastikan kamu sudah:\n"
+            "1. Menambahkan NOCTA_API_KEY di GitHub Secrets.\n"
+            "2. Menambahkan baris `NOCTA_API_KEY: ${{ secrets.NOCTA_API_KEY }}` di bagian bawah file `bot.yml`."
+        )
+        return
+
+    msg = bot.reply_to(message, "🔍 Sedang menguji koneksi dan API Key ke server Nocta Digital...")
+
+    # Gunakan User-Agent menyerupai Browser Chrome asli agar tidak diblokir Cloudflare
+    headers = {
+        "Authorization": f"Bearer {NOCTA_API_KEY}",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    }
+
+    laporan = []
+
+    # Tes 1: Cek daftar model yang tersedia di akun Nocta
+    try:
+        res_models = requests.get(f"{NOCTA_BASE}/models", headers=headers, timeout=15)
+        if res_models.status_code == 200:
+            data_m = res_models.json().get("data", [])
+             daftar_id = [m.get("id") for m in data_m if m.get("id")]
+            laporan.append(f"✅ Koneksi Server: Sukses (200 OK)\n📋 Model tersedia di server: {', '.join(daftar_id[:10])}")
+        else:
+            laporan.append(f"⚠️ Cek Daftar Model gagal (Kode {res_models.status_code}):\n{res_models.text[:150]}")
+    except Exception as e:
+        laporan.append(f"❌ Gagal menghubungi {NOCTA_BASE}/models:\n{e}")
+
+    # Tes 2: Uji coba kirim pesan ke masing-masing model Nocta
+    for model in NOCTA_MODELS:
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "Tes"}],
+            "max_tokens": 10
+        }
+        try:
+            res_chat = requests.post(NOCTA_URL, headers=headers, json=payload, timeout=20)
+            if res_chat.status_code == 200:
+                laporan.append(f"✅ Model `{model}`: AKTIF & MERESPONS!")
+            else:
+                laporan.append(f"❌ Model `{model}` Ditolak (Kode {res_chat.status_code}):\n{res_chat.text[:150]}")
+        except Exception as e:
+            laporan.append(f"❌ Model `{model}` Error Koneksi: {e}")
+
+     hasil_akhir = "📊 HASIL DIAGNOSA NOCTA DIGITAL:\n\n" + "\n\n".join(laporan)
+    bot.edit_message_text(hasil_akhir[:4000], chat_id=message.chat.id, message_id=msg.message_id)
+
+# 5. Handler Pembuat Gambar
 @bot.message_handler(commands=['gambar'])
 def handle_image(message):
     prompt = message.text.replace('/gambar', '').strip()
-    
     if not prompt:
         bot.reply_to(message, "Masukkan deskripsi gambar.\nContoh: /gambar ksatria berpedang api")
         return
 
     bot.send_chat_action(message.chat.id, 'upload_photo')
     msg_wait = bot.reply_to(message, f"⏳ Sedang melukis: {prompt}...")
-
     seed = random.randint(1, 1000000)
     safe_prompt = urllib.parse.quote(prompt)
     image_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?seed={seed}&nologo=true&enhance=true"
@@ -100,12 +152,12 @@ def handle_image(message):
     except Exception as e:
         bot.edit_message_text(f"❌ Error koneksi gambar: {e}", chat_id=message.chat.id, message_id=msg_wait.message_id)
 
-# 5. Fungsi inti penembak API Chat (Bisa untuk Nocta & OpenRouter)
+# 6. Fungsi Inti Penembak API Chat
 def request_ai_chat(api_url, api_key, model_name, user_text):
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "User-Agent": "TelegramBot/1.0"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
     if "openrouter.ai" in api_url:
         headers["HTTP-Referer"] = "https://github.com"
@@ -127,10 +179,10 @@ def request_ai_chat(api_url, api_key, model_name, user_text):
     }
 
     try:
-        res = requests.post(api_url, headers=headers, json=payload, proxies=api_proxies, timeout=45)
+        res = requests.post(api_url, headers=headers, json=payload, timeout=45)
     except Exception:
         if api_proxies:
-            res = requests.post(api_url, headers=headers, json=payload, timeout=45)
+            res = requests.post(api_url, headers=headers, json=payload, proxies=api_proxies, timeout=45)
         else:
             raise
 
@@ -140,19 +192,20 @@ def request_ai_chat(api_url, api_key, model_name, user_text):
             content = data["choices"][0].get("message", {}).get("content", "")
             if content and content.strip():
                 return True, content.strip()
-        return False, f"Format respons kosong dari {model_name}"
+        return False, f"Respons kosong ({ str(data)[:100] })"
     else:
-        return False, f"Kode {res.status_code} ({res.text[:100]})"
+        return False, f"Kode {res.status_code}: {res.text[:120]}"
 
-# Fungsi bantu kirim pesan panjang agar tidak ditolak Telegram (batas 4096 karakter)
-def kirim_balasan_aman(message, teks):
-    if len(teks) <= 4000:
-        bot.reply_to(message, teks)
+def kirim_balasan_aman(message, teks, nama_model):
+    footer = f"\n\n🤖 [Dijawab oleh: {nama_model}]"
+    teks_lengkap = teks + footer
+    if len(teks_lengkap) <= 4000:
+        bot.reply_to(message, teks_lengkap)
     else:
-        for i in range(0, len(teks), 4000):
-            bot.reply_to(message, teks[i:i+4000])
+        for i in range(0, len(teks_lengkap), 4000):
+            bot.reply_to(message, teks_lengkap[i:i+4000])
 
-# 6. Handler Utama Chat Teks
+# 7. Handler Utama Chat Teks
 @bot.message_handler(func=lambda message: True)
 def handle_chat(message):
     if not message.text:
@@ -161,40 +214,35 @@ def handle_chat(message):
     bot.send_chat_action(message.chat.id, 'typing')
     error_logs = []
 
-    # PRIORITAS 1: Gunakan Server Nocta Digital
+    # PRIORITAS 1: Server Nocta Digital
     if NOCTA_API_KEY:
         for model in NOCTA_MODELS:
             try:
                 sukses, hasil = request_ai_chat(NOCTA_URL, NOCTA_API_KEY, model, message.text)
                 if sukses:
-                    kirim_balasan_aman(message, hasil)
+                    kirim_balasan_aman(message, hasil, f"Nocta - {model}")
                     return
                 else:
                     error_logs.append(f"Nocta ({model}): {hasil}")
-                    print(f"[Gagal] Nocta {model} -> {hasil}")
             except Exception as e:
-                error_logs.append(f"Nocta ({model}): Error Koneksi")
-                print(f"[Exception] Nocta {model} -> {e}")
-    else:
-        error_logs.append("NOCTA_API_KEY belum terbaca di environment.")
+                error_logs.append(f"Nocta ({model}): {e}")
 
-    # PRIORITAS 2: Cadangan Otomatis ke OpenRouter
+    # PRIORITAS 2: Cadangan OpenRouter
     if OPENROUTER_KEY:
         for model in BACKUP_MODELS[:3]:
             try:
                 sukses, hasil = request_ai_chat("https://openrouter.ai/api/v1/chat/completions", OPENROUTER_KEY, model, message.text)
                 if sukses:
-                    kirim_balasan_aman(message, hasil)
+                    kirim_balasan_aman(message, hasil, f"Cadangan - {model}")
                     return
                 else:
                     error_logs.append(f"Backup ({model}): {hasil}")
             except Exception as e:
-                error_logs.append(f"Backup ({model}): Error Koneksi")
+                error_logs.append(f"Backup ({model}): {e}")
 
-    # Jika semua server mati
-    detail_err = "\n".join(error_logs[-2:]) if error_logs else "Semua API Key belum terkonfigurasi."
-    bot.reply_to(message, f"⚠️ Maaf, seluruh server AI sedang sibuk/gangguan.\nDetail:\n{detail_err}")
+    detail_err = "\n".join(error_logs[-3:]) if error_logs else "Semua API Key belum terkonfigurasi."
+    bot.reply_to(message, f"⚠️ Seluruh server gagal merespons.\n\nDetail Error:\n{detail_err}")
 
 if __name__ == "__main__":
-    print(f"Menjalankan Bot... Status NOCTA_API_KEY: {'Ada' if NOCTA_API_KEY else 'Kosong'}")
+    print("Menjalankan Bot Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10, skip_pending=True)
