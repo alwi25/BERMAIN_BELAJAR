@@ -1,38 +1,37 @@
-name: Run Telegram AI Bot
+name: Run Nous Hermes Bot
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Agar bisa dinyalakan manual lewat tombol
   schedule:
-    - cron: "*/30 * * * *"
-
-concurrency:
-  group: telegram-ai-bot
-  cancel-in-progress: false
+    # Otomatis menyalakan ulang bot setiap 5 jam 50 menit agar jalan terus
+    - cron: '50 */5 * * *'
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 350 # Berhenti rapi di menit 350 sebelum diputus paksa oleh GitHub
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.10'
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests
+          pip install pyTelegramBotAPI requests
 
-      - name: Run Telegram AI Bot (28 Menit per Siklus)
+      - name: Run Bot Script
         env:
-          TELEGRAM_BOT_TOKEN: "9148476943:AAFbOSDajennHitzCxhFSr6K4YrVeO_ajLw"
-          AI_BASE_URL: "https://crowllm.com/v1"
-          AI_API_KEY: "Fok2UxKQ9siKjfxs1i1vF2u886VpbbTvF30G6lGtVPtLDz3U"
-          AI_MODEL: "deepseek-r1-distill-qwen-32b:free"
-          MAX_RUNTIME_SECONDS: "1680"
-        run: python main.py
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+          API_KEY: ${{ secrets.API_KEY }}
+        run: |
+          python -u main.py
