@@ -37,9 +37,11 @@ jobs:
           PROXY_URL: ${{ secrets.PROXY_URL }}
           ZENMUX_API_KEY: ${{ secrets.ZENMUX_API_KEY }}
           BEST_API_KEY: ${{ secrets.BEST_API_KEY }}
+          INDO_API_KEY: ${{ secrets.INDO_API_KEY }}
           BEJO_API_KEY: ${{ secrets.BEJO_API_KEY }}
           NOCTA_API_KEY: ${{ secrets.NOCTA_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           API_KEY: ${{ secrets.API_KEY }}
         run: |
           python -u main.py
