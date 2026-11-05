@@ -31,7 +31,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyTelegramBotAPI requests urllib3 google-genai
 
-      - name: Run Bot Script
+      -       - name: Run Bot Script
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
