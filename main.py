@@ -5,22 +5,44 @@ import requests
 import urllib.parse
 import random
 import urllib3
+from google import genai
 
 # Menonaktifkan peringatan SSL jika server API menggunakan sertifikat lokal
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# 1. Mengambil semua kredensial dari GitHub Secrets
+# 1. Mengambil semua kredensial murni dari GitHub Secrets (Tanpa Hardcode)
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 PROXY_URL = os.environ.get("PROXY_URL", "").strip()
-OPENROUTER_KEY = os.environ.get("API_KEY", "").strip()
+BEJO_API_KEY = os.environ.get("BEJO_API_KEY", "").strip()
 NOCTA_API_KEY = os.environ.get("NOCTA_API_KEY", "").strip()
-
-NOCTA_BASE = "https://nocta-digital.web.id/v1"
-NOCTA_URL = f"{NOCTA_BASE}/chat/completions"
-NOCTA_MODELS = ["deepseek-v4.1", "gpt-5.6-luna"]
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+OPENROUTER_KEY = os.environ.get("API_KEY", "").strip()
 
 if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN kosong! Pastikan sudah diisi di GitHub Secrets.")
+    raise ValueError("BOT_TOKEN kosong! Harap isi di GitHub Secrets.")
+
+# Konfigurasi Endpoint dan Daftar Model
+BEJO_URL = "https://bejoxxx.tech/v1/chat/completions"
+BEJO_MODELS = ["qwen3.8-27b-uncensored"]
+
+NOCTA_URL = "https://nocta-digital.web.id/v1/chat/completions"
+NOCTA_MODELS = ["deepseek-v4.1", "gpt-5.6-luna"]
+
+GEMINI_MODELS = [
+    "gemini-4-argon",
+    "gemini-1.5-pro",
+    "gemini-1.5-flash"
+]
+
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Inisialisasi Klien Gemini dengan aman
+gemini_client = None
+if GEMINI_API_KEY:
+    try:
+        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    except Exception as e:
+        print(f"Gagal inisialisasi Gemini Client: {e}")
 
 # 2. Tes koneksi Proxy terlebih dahulu
 use_proxy = False
@@ -62,85 +84,36 @@ def get_openrouter_models():
             for fid in free_ids:
                 if fid not in available_free:
                     available_free.append(fid)
-    except Exception as e:
-        print("Gagal memuat daftar OpenRouter:", e)
+    except Exception:
+        pass
     available_free.append("openrouter/free")
     return available_free
 
-BACKUP_MODELS = get_openrouter_models()
+OPENROUTER_MODELS = get_openrouter_models() if OPENROUTER_KEY else []
 
-@bot.message_handler(commands=['start', 'help'])
+# Perintah /start, /help, dan /status untuk mengecek keterbacaan Secret
+@bot.message_handler(commands=['start', 'help', 'status'])
 def send_welcome(message):
-    status_proxy = "Aktif" if use_proxy else "Koneksi Langsung"
-    status_nocta = "Terbaca" if NOCTA_API_KEY else "Kosong (Cek Secrets / bot.yml)"
-    
+    s_bejo = "✅ Siap" if BEJO_API_KEY else "❌ Kosong"
+    s_nocta = "✅ Siap" if NOCTA_API_KEY else "❌ Kosong"
+    s_gemini = "✅ Siap" if gemini_client else "❌ Kosong"
+    s_or = "✅ Siap" if OPENROUTER_KEY else "❌ Kosong"
+    s_proxy = "Aktif" if use_proxy else "Langsung (Tanpa Proxy)"
+
     pesan = (
-        f"✅ Bot AI Uncensored Aktif!\n\n"
-        f"🔹 Kunci Nocta: {status_nocta}\n"
-        f"🔹 Status Proxy: {status_proxy}\n\n"
-        f"🛠 Ketik /ceknocta untuk periksa status API Nocta.\n"
-        f"🎨 Ketik /gambar [deskripsi] untuk membuat foto.\n"
-        f"💬 Ketik pesan biasa untuk mulai ngobrol."
+        "🤖 Bot AI Multi-Server & Uncensored Aktif!\n\n"
+        "📊 Status Kredensial GitHub Secrets:\n"
+        f"1. Bejoxxx (Utama): {s_bejo}\n"
+        f"2. Nocta Digital: {s_nocta}\n"
+        f"3. Google Gemini: {s_gemini}\n"
+        f"4. OpenRouter: {s_or}\n"
+        f"🌐 Koneksi: {s_proxy}\n\n"
+        "🎨 Ketik /gambar [deskripsi] untuk membuat foto bebas filter.\n"
+        "💬 Ketik pesan biasa untuk mulai chat."
     )
     bot.reply_to(message, pesan)
 
-# 4. FITUR DIAGNOSA: Cek Status Asli Server & API Key Nocta
-@bot.message_handler(commands=['ceknocta'])
-def handle_cek_nocta(message):
-    if not NOCTA_API_KEY:
-        bot.reply_to(
-            message,
-            "❌ Variabel NOCTA_API_KEY masih kosong!\n\n"
-            "Pastikan:\n"
-            "1. Nama di GitHub Secrets adalah NOCTA_API_KEY\n"
-            "2. Di dalam bot.yml sudah ada baris:\n"
-            "NOCTA_API_KEY: ${{ secrets.NOCTA_API_KEY }}"
-        )
-        return
-
-    msg = bot.reply_to(message, "🔍 Sedang menguji koneksi ke server Nocta Digital...")
-
-    headers = {
-        "Authorization": f"Bearer {NOCTA_API_KEY}",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36"
-    }
-
-    laporan = []
-
-    # Tes 1: Cek daftar model di server Nocta
-    try:
-        res_models = requests.get(f"{NOCTA_BASE}/models", headers=headers, timeout=15, verify=False)
-        if res_models.status_code == 200:
-            data_m = res_models.json().get("data", [])
-            daftar_id = [str(m.get("id")) for m in data_m if m.get("id")]
-            info_model = ", ".join(daftar_id[:15]) if daftar_id else "Tidak ada daftar"
-            laporan.append(f"✅ Server Terhubung (200 OK)\n📋 Model di server: {info_model}")
-        else:
-            laporan.append(f"⚠️ Cek /models ditolak (Kode {res_models.status_code}):\n{res_models.text[:150]}")
-    except Exception as e:
-        laporan.append(f"❌ Gagal menghubungi {NOCTA_BASE}/models:\n{e}")
-
-    # Tes 2: Uji coba masing-masing model Nocta
-    for model in NOCTA_MODELS:
-        payload = {
-            "model": model,
-            "messages": [{"role": "user", "content": "Halo"}],
-            "max_tokens": 15
-        }
-        try:
-            res_chat = requests.post(NOCTA_URL, headers=headers, json=payload, timeout=20, verify=False)
-            if res_chat.status_code == 200:
-                laporan.append(f"✅ Model {model}: AKTIF & MERESPONS!")
-            else:
-                laporan.append(f"❌ Model {model} Gagal (Kode {res_chat.status_code}):\n{res_chat.text[:150]}")
-        except Exception as e:
-            laporan.append(f"❌ Model {model} Error Koneksi:\n{e}")
-
-    hasil_akhir = "📊 HASIL DIAGNOSA NOCTA DIGITAL:\n\n" + "\n\n".join(laporan)
-    bot.edit_message_text(hasil_akhir[:4000], chat_id=message.chat.id, message_id=msg.message_id)
-
-# 5. Handler Pembuat Gambar
+# 4. Handler Pembuat Gambar
 @bot.message_handler(commands=['gambar'])
 def handle_image(message):
     prompt = message.text.replace('/gambar', '').strip()
@@ -175,8 +148,8 @@ def handle_image(message):
             message_id=msg_wait.message_id
         )
 
-# 6. Fungsi Inti Penembak API Chat
-def request_ai_chat(api_url, api_key, model_name, user_text):
+# 5. Fungsi Penembak API Berformat OpenAI (Bejoxxx, Nocta, OpenRouter)
+def request_openai_compatible(api_url, api_key, model_name, user_text):
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -215,12 +188,13 @@ def request_ai_chat(api_url, api_key, model_name, user_text):
             content = data["choices"][0].get("message", {}).get("content", "")
             if content and content.strip():
                 return True, content.strip()
-        return False, f"Respons kosong ({str(data)[:100]})"
+        return False, "Respons kosong dari server"
     else:
-        return False, f"Kode {res.status_code}: {res.text[:120]}"
+        return False, f"Kode {res.status_code}: {res.text[:100]}"
 
+# Fungsi bantu kirim pesan agar aman dari limit 4096 karakter Telegram
 def kirim_balasan_aman(message, teks, nama_model):
-    footer = f"\n\n🤖 [Dijawab oleh: {nama_model}]"
+    footer = f"\n\n⚙️ [Model: {nama_model}]"
     teks_lengkap = teks + footer
     if len(teks_lengkap) <= 4000:
         bot.reply_to(message, teks_lengkap)
@@ -228,7 +202,7 @@ def kirim_balasan_aman(message, teks, nama_model):
         for i in range(0, len(teks_lengkap), 4000):
             bot.reply_to(message, teks_lengkap[i:i+4000])
 
-# 7. Handler Utama Chat Teks
+# 6. Handler Utama Chat Teks Berjenjang
 @bot.message_handler(func=lambda message: True)
 def handle_chat(message):
     if not message.text:
@@ -237,40 +211,72 @@ def handle_chat(message):
     bot.send_chat_action(message.chat.id, 'typing')
     error_logs = []
 
-    # PRIORITAS 1: Server Nocta Digital
+    # URUTAN 1 (UTAMA): Server Bejoxxx (qwen3.8-27b-uncensored)
+    if BEJO_API_KEY:
+        for model in BEJO_MODELS:
+            try:
+                print(f"Mencoba Prioritas 1 (Bejoxxx): {model}...")
+                sukses, hasil = request_openai_compatible(BEJO_URL, BEJO_API_KEY, model, message.text)
+                if sukses:
+                    kirim_balasan_aman(message, hasil, model)
+                    return
+                else:
+                    error_logs.append(f"Bejoxxx ({model}): {hasil}")
+            except Exception as e:
+                error_logs.append(f"Bejoxxx ({model}): {str(e)[:80]}")
+    else:
+        error_logs.append("Bejoxxx: BEJO_API_KEY kosong di Secrets")
+
+    # URUTAN 2 (CADANGAN 1): Server Nocta Digital
     if NOCTA_API_KEY:
         for model in NOCTA_MODELS:
             try:
-                sukses, hasil = request_ai_chat(NOCTA_URL, NOCTA_API_KEY, model, message.text)
+                print(f"Mencoba Cadangan Nocta: {model}...")
+                sukses, hasil = request_openai_compatible(NOCTA_URL, NOCTA_API_KEY, model, message.text)
                 if sukses:
                     kirim_balasan_aman(message, hasil, f"Nocta - {model}")
                     return
                 else:
                     error_logs.append(f"Nocta ({model}): {hasil}")
             except Exception as e:
-                error_logs.append(f"Nocta ({model}): {e}")
+                error_logs.append(f"Nocta ({model}): {str(e)[:80]}")
 
-    # PRIORITAS 2: Cadangan OpenRouter
-    if OPENROUTER_KEY:
-        for model in BACKUP_MODELS[:3]:
+    # URUTAN 3 (CADANGAN 2): Google Gemini Berjenjang (Argon -> Pro -> Flash)
+    if gemini_client:
+        for model_name in GEMINI_MODELS:
             try:
-                sukses, hasil = request_ai_chat(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    OPENROUTER_KEY,
-                    model,
-                    message.text
+                print(f"Mencoba Cadangan Gemini: {model_name}...")
+                response = gemini_client.models.generate_content(
+                    model=model_name,
+                    contents=message.text,
                 )
+                if response and response.text:
+                    kirim_balasan_aman(message, response.text.strip(), model_name)
+                    return
+            except Exception as e:
+                error_logs.append(f"Gemini ({model_name}): {str(e)[:80]}")
+
+    # URUTAN 4 (CADANGAN TERAKHIR): OpenRouter Gratis
+    if OPENROUTER_KEY:
+        for model in OPENROUTER_MODELS[:3]:
+            try:
+                print(f"Mencoba Cadangan OpenRouter: {model}...")
+                sukses, hasil = request_openai_compatible(OPENROUTER_URL, OPENROUTER_KEY, model, message.text)
                 if sukses:
-                    kirim_balasan_aman(message, hasil, f"Cadangan - {model}")
+                    kirim_balasan_aman(message, hasil, f"OR - {model}")
                     return
                 else:
-                    error_logs.append(f"Backup ({model}): {hasil}")
+                    error_logs.append(f"OR ({model}): {hasil}")
             except Exception as e:
-                error_logs.append(f"Backup ({model}): {e}")
+                error_logs.append(f"OR ({model}): {str(e)[:80]}")
 
-    detail_err = "\n".join(error_logs[-3:]) if error_logs else "Semua API Key belum terkonfigurasi."
-    bot.reply_to(message, f"⚠️ Seluruh server gagal merespons.\n\nDetail Error:\n{detail_err}")
+    # Jika seluruh model dari atas sampai bawah gagal atau habis kuota
+    detail_err = "\n".join(error_logs[-4:]) if error_logs else "Semua API Key belum diatur di GitHub Secrets."
+    bot.reply_to(
+        message,
+        f"⚠️ Maaf, seluruh model utama dan cadangan sedang habis kuota atau mengalami gangguan.\n\nDetail Terakhir:\n{detail_err}"
+    )
 
 if __name__ == "__main__":
-    print("Menjalankan Bot Telegram...")
+    print("Menjalankan Bot Telegram Multi-Layer Fallback...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10, skip_pending=True)
