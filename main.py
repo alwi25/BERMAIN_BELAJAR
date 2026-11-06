@@ -15,6 +15,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 1. Kredensial Murni dari GitHub Secrets
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 PROXY_URL = os.environ.get("PROXY_URL", "").strip()
+DAHL_API_KEY = os.environ.get("DAHL_API_KEY", "").strip()
 ZENMUX_API_KEY = os.environ.get("ZENMUX_API_KEY", "").strip()
 TER_API_KEY = os.environ.get("TER_API_KEY", "").strip()
 BEST_API_KEY = os.environ.get("BEST_API_KEY", "").strip()
@@ -32,6 +33,7 @@ if not BOT_TOKEN:
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 ZENMUX_CANDIDATE_BASES = ["https://api.zenmux.ai/v1", "https://zenmux.ai/api/v1", "https://zenmux.ai/v1"]
 TER_BASE_URL = "https://ter.biz.id/v1"
+DAHL_BASE_URL = "https://inference.dahl.global/v1"
 BEST_CHAT_URL = "https://api.bestllmapi.com/v1/chat/completions"
 INDO_CHAT_URL = "https://indosmartrouter.cloud/v1/chat/completions"
 BEJO_URL = "https://bejoxxx.tech/v1/chat/completions"
@@ -42,7 +44,7 @@ gemini_client = None
 if GEMINI_API_KEY:
     try:
         gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    except Exception as e:
+    except Exception:
         pass
 
 use_proxy = False
@@ -59,7 +61,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 USER_LOCKED_MODEL = {}
 WAITING_MODEL_CHOICE = {}
 
-# 2. Penyisir Model (ZenMux, 9Router, BestLLM, OpenRouter)
+# 2. Penyisir Model (ZenMux, 9Router, Dahl, BestLLM, OpenRouter)
 ZENMUX_ACTIVE_BASE = ZENMUX_CANDIDATE_BASES[0]
 
 def sisir_model_zenmux():
@@ -105,8 +107,27 @@ def sisir_model_ter():
         if d not in found: found.append(d)
     return found
 
+def sisir_model_dahl():
+    defaults = ["qwen-3.8-flash", "minimax", "llama-3.1-70b", "deepseek-coder"]
+    found = []
+    if DAHL_API_KEY:
+        try:
+            res = requests.get(f"{DAHL_BASE_URL}/models", headers={"Authorization": f"Bearer {DAHL_API_KEY}"}, timeout=10, verify=False)
+            if res.status_code == 200:
+                ids = [str(m.get("id")) for m in res.json().get("data", []) if m.get("id")]
+                for d in defaults:
+                    for mid in ids:
+                        if d in mid.lower() and mid not in found: found.append(mid)
+                for mid in ids:
+                    if mid not in found: found.append(mid)
+        except: pass
+    for d in defaults:
+        if d not in found: found.append(d)
+    return found
+
 ZENMUX_MODELS = sisir_model_zenmux()
 TER_MODELS = sisir_model_ter()
+DAHL_MODELS = sisir_model_dahl()
 
 def get_bestllm_models():
     found = []
@@ -147,21 +168,19 @@ OR_MODELS = get_openrouter_models() if OPENROUTER_KEY else ["openrouter/free"]
 # 3. Katalog Utama & Folder Sub-Kategori
 KATALOG_MODEL = {
     "chatgpt": {"provider": "openai", "model_id": "gpt-4o", "nama": "ChatGPT 4o (OpenAI)", "tugas": "Serba Bisa, Natural & Pintar"},
-    "indo": {"provider": "indo", "model_id": "qwen-uncensored", "nama": "IndoSmart Qwen Uncensored", "tugas": "Teks Tanpa Sensor (IndoSmart)"},
+    "indo": {"provider": "indo", "model_id": "qwen-uncensored", "nama": "IndoSmart Qwen", "tugas": "Teks Tanpa Sensor (IndoSmart)"},
     "best": {"provider": "bestllm", "model_id": BEST_MODELS[0], "nama": "BestLLM Uncensored", "tugas": "Teks & Roleplay Tanpa Filter"},
-    "qwen": {"provider": "bejo", "model_id": "qwen3.8-27b-uncensored", "nama": "Qwen 3.8 27B Uncensored", "tugas": "Teks Tanpa Sensor & Koding"},
-    "deepseek": {"provider": "nocta", "model_id": "deepseek-v4.1", "nama": "DeepSeek v4.1 (Nocta)", "tugas": "Koding, Algoritma & Bug Fixing"},
-    "luna": {"provider": "nocta", "model_id": "gpt-5.6-luna", "nama": "GPT-5.6 Luna (Nocta)", "tugas": "Teks Kreatif & Natural"},
+    "qwen": {"provider": "bejo", "model_id": "qwen3.8-27b-uncensored", "nama": "Qwen 3.8 27B", "tugas": "Teks Tanpa Sensor & Koding"},
+    "deepseek": {"provider": "nocta", "model_id": "deepseek-v4.1", "nama": "DeepSeek v4.1", "tugas": "Koding, Algoritma & Bug Fixing"},
+    "luna": {"provider": "nocta", "model_id": "gpt-5.6-luna", "nama": "GPT-5.6 Luna", "tugas": "Teks Kreatif & Natural"},
     "argon": {"provider": "gemini", "model_id": "gemini-4-argon", "nama": "Gemini 4 Argon", "tugas": "Penalaran Logika & Analisis"},
-    "gemini": {"provider": "gemini", "model_id": "gemini-1.5-pro", "nama": "Gemini 1.5 Pro", "tugas": "Dokumen Panjang"},
-    "flash": {"provider": "gemini", "model_id": "gemini-1.5-flash", "nama": "Gemini 1.5 Flash", "tugas": "Respon Cepat"},
     "recursive": {"provider": "openrouter", "model_id": "openrouter/free", "nama": "OpenRouter Recursive", "tugas": "Teks Multi-Model Otomatis"},
-    "gambar": {"provider": "pollinations", "model_id": "flux-uncensored", "nama": "Pollinations Flux Uncensored", "tugas": "Gambar & Foto Tanpa Filter"},
+    "gambar": {"provider": "pollinations", "model_id": "flux-uncensored", "nama": "Pollinations Flux", "tugas": "Gambar & Foto Tanpa Filter"},
     "video": {"provider": "video_engine", "model_id": "director-flux-16-9", "nama": "AI Video Director", "tugas": "Skenario Video & Keyframe"}
 }
 
 def segarkan_folder_kategori():
-    kunci_lama = [k for k in KATALOG_MODEL.keys() if k.startswith("zm_") or k.startswith("ter_")]
+    kunci_lama = [k for k in KATALOG_MODEL.keys() if k.startswith("zm_") or k.startswith("ter_") or k.startswith("dahl_")]
     for k in kunci_lama: del KATALOG_MODEL[k]
     
     for idx, m_id in enumerate(ZENMUX_MODELS[:15]):
@@ -174,6 +193,11 @@ def segarkan_folder_kategori():
             "provider": "ter", "model_id": m_id, "nama": f"9Router: {m_id}",
             "tugas": "Roleplay & Jailbreak" if "jb" in m_id.lower() or "mommy" in m_id.lower() or "kratos" in m_id.lower() else "Model GLM 9Router"
         }
+    for idx, m_id in enumerate(DAHL_MODELS[:15]):
+        KATALOG_MODEL[f"dahl_{idx}"] = {
+            "provider": "dahl", "model_id": m_id, "nama": f"Dahl: {m_id}",
+            "tugas": "Open Models (Dahl Inference)"
+        }
 
 segarkan_folder_kategori()
 
@@ -182,13 +206,15 @@ def buat_menu_utama(mode_aktif):
     markup = InlineKeyboardMarkup(row_width=2)
     jum_zm = len([k for k in KATALOG_MODEL if k.startswith("zm_")])
     jum_ter = len([k for k in KATALOG_MODEL if k.startswith("ter_")])
+    jum_dahl = len([k for k in KATALOG_MODEL if k.startswith("dahl_")])
     
     markup.row(InlineKeyboardButton(f"{'🔒📂' if mode_aktif.startswith('zm_') else '📂'} KATEGORI ZENMUX ({jum_zm} Model)", callback_data="cat_zenmux"))
-    markup.row(InlineKeyboardButton(f"{'🔒📂' if mode_aktif.startswith('ter_') else '📂'} KATEGORI 9ROUTER GLM ({jum_ter} Model)", callback_data="cat_ter"))
+    markup.row(InlineKeyboardButton(f"{'🔒📂' if mode_aktif.startswith('ter_') else '📂'} KATEGORI 9ROUTER ({jum_ter} Model)", callback_data="cat_ter"))
+    markup.row(InlineKeyboardButton(f"{'🔒📂' if mode_aktif.startswith('dahl_') else '📂'} KATEGORI DAHL ({jum_dahl} Model)", callback_data="cat_dahl"))
     
     tombol_list = []
     for kode, info in KATALOG_MODEL.items():
-        if kode.startswith("zm_") or kode.startswith("ter_"): continue
+        if kode.startswith("zm_") or kode.startswith("ter_") or kode.startswith("dahl_"): continue
         tanda = "🔒 " if kode == mode_aktif else "🤖 "
         tombol_list.append(InlineKeyboardButton(f"{tanda}{kode.upper()} ({info['nama'][:10]})", callback_data=f"lock_{kode}"))
     markup.add(*tombol_list)
@@ -226,8 +252,19 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None):
     headers_umum = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
 
     try:
+        # EKSEKUSI DAHL INFERENCE
+        if provider == "dahl":
+            if not DAHL_API_KEY: return False, "DAHL_API_KEY belum diisi di Secrets.", nama_tampil
+            headers = {**headers_umum, "Authorization": f"Bearer {DAHL_API_KEY}"}
+            payload = {"model": model_id, "messages": [{"role": "system", "content": sistem_prompt}, {"role": "user", "content": user_text}], "temperature": 0.7}
+            res = requests.post(f"{DAHL_BASE_URL}/chat/completions", headers=headers, json=payload, timeout=45, verify=False)
+            if res.status_code == 200:
+                isi = res.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+                if isi and isi.strip(): return True, isi.strip(), f"Dahl ({model_id})"
+            return False, f"Server Dahl gagal (Kode {res.status_code})", nama_tampil
+
         # EKSEKUSI 9ROUTER GLM (ter.biz.id)
-        if provider == "ter":
+        elif provider == "ter":
             if not TER_API_KEY: return False, "TER_API_KEY belum diisi di Secrets.", nama_tampil
             headers = {**headers_umum, "Authorization": f"Bearer {TER_API_KEY}"}
             payload = {"model": model_id, "messages": [{"role": "system", "content": sistem_prompt}, {"role": "user", "content": user_text}], "temperature": 0.7}
@@ -315,8 +352,7 @@ def kerjakan_video(message, teks_user):
     instruksi_video = "Kamu AI Video Director. Buatlah: 1. Skenario Visual, 2. Prompt Teknis Bahasa Inggris untuk engine video AI."
     teks_skenario, penulis = "", "Video Director"
     
-    # Prioritaskan GLM Unchained atau ZenMux untuk skenario video
-    antrean_video = ["ter_0", "zm_0", "indo", "chatgpt", "qwen", "recursive"]
+    antrean_video = ["dahl_0", "ter_0", "zm_0", "indo", "chatgpt", "qwen", "recursive"]
     for k in antrean_video:
         if k in KATALOG_MODEL:
             ok, hasil, label = eksekusi_tunggal(k, teks_user, instruksi_video)
@@ -350,11 +386,11 @@ def handle_cek_kuota(message):
     msg = bot.reply_to(message, "🔍 Memeriksa sisa pemakaian dan kuota...")
     laporan = "📊 **LAPORAN SISA KUOTA & PEMAKAIAN API**\n─────────────────────────\n"
     
+    laporan += f"🌐 **Dahl Inference:** {'Terpasang & Siap' if DAHL_API_KEY else 'Belum Terpasang'}\n"
     laporan += f"🌐 **9Router GLM:** {'Terpasang & Siap' if TER_API_KEY else 'Belum Terpasang'}\n"
     laporan += f"🌐 **ZenMux AI:** {'Terpasang & Siap' if ZENMUX_API_KEY else 'Belum Terpasang'}\n"
     laporan += f"🌐 **IndoSmartRouter:** {'Terpasang & Siap' if INDO_API_KEY else 'Belum Terpasang'}\n"
     laporan += f"🌐 **OpenAI (ChatGPT):** {'Terpasang' if OPENAI_API_KEY else 'Belum Terpasang'}\n"
-    laporan += f"🌐 **BestLLM:** {'Terpasang' if BEST_API_KEY else 'Belum Terpasang'}\n"
     
     def cek_saldo_custom(nama_server, chat_url, api_key):
         if not api_key: return f"⚙️ **{nama_server}:** API Key belum dipasang.\n"
@@ -370,6 +406,7 @@ def handle_cek_kuota(message):
             return f"⚙️ **{nama_server}:** API Aktif.\n"
         except: return f"⚙️ **{nama_server}:** API Terpasang.\n"
 
+    laporan += cek_saldo_custom("BestLLM", BEST_CHAT_URL, BEST_API_KEY)
     laporan += cek_saldo_custom("Bejoxxx", BEJO_URL, BEJO_API_KEY)
     laporan += cek_saldo_custom("Nocta Digital", NOCTA_URL, NOCTA_API_KEY)
     bot.edit_message_text(laporan, chat_id=message.chat.id, message_id=msg.message_id, parse_mode="Markdown")
@@ -378,6 +415,7 @@ def teks_menu_utama_str(mode_sekarang):
     info = "OTOMATIS" if mode_sekarang == "auto" else KATALOG_MODEL.get(mode_sekarang, {}).get("nama", "Unknown")
     return (
         f"🎛 **PUSAT KONTROL MODEL AI**\nStatus: `[{info}]`\n─────────────────────────\n"
+        f"📂 Klik Folder **DAHL INFERENCE** untuk Open Models.\n"
         f"📂 Klik Folder **9ROUTER GLM** untuk varian Unchained Jailbreak.\n"
         f"📂 Klik Folder **ZENMUX** untuk Tencent HY4 & DeepSeek.\n\n"
         f"🤖 **Model Langsung Lainnya:**\n"
@@ -411,7 +449,7 @@ def handle_command_model(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_semua_tombol(call):
-    global ZENMUX_MODELS, TER_MODELS
+    global ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
     chat_id, data = call.message.chat.id, call.data
     mode_sekarang = USER_LOCKED_MODEL.get(chat_id, "auto")
 
@@ -420,6 +458,8 @@ def handle_semua_tombol(call):
             bot.edit_message_text(teks_submenu_folder_str("ZENMUX AI", mode_sekarang, "zm_"), chat_id=chat_id, message_id=call.message.message_id, reply_markup=buat_submenu_folder(mode_sekarang, "zm_", "refresh_zm"), parse_mode="Markdown")
         elif data == "cat_ter":
             bot.edit_message_text(teks_submenu_folder_str("9ROUTER GLM", mode_sekarang, "ter_"), chat_id=chat_id, message_id=call.message.message_id, reply_markup=buat_submenu_folder(mode_sekarang, "ter_", "refresh_ter"), parse_mode="Markdown")
+        elif data == "cat_dahl":
+            bot.edit_message_text(teks_submenu_folder_str("DAHL INFERENCE", mode_sekarang, "dahl_"), chat_id=chat_id, message_id=call.message.message_id, reply_markup=buat_submenu_folder(mode_sekarang, "dahl_", "refresh_dahl"), parse_mode="Markdown")
         elif data == "refresh_zm":
             ZENMUX_MODELS = sisir_model_zenmux()
             segarkan_folder_kategori()
@@ -428,6 +468,10 @@ def handle_semua_tombol(call):
             TER_MODELS = sisir_model_ter()
             segarkan_folder_kategori()
             bot.edit_message_text(teks_submenu_folder_str("9ROUTER GLM", mode_sekarang, "ter_"), chat_id=chat_id, message_id=call.message.message_id, reply_markup=buat_submenu_folder(mode_sekarang, "ter_", "refresh_ter"), parse_mode="Markdown")
+        elif data == "refresh_dahl":
+            DAHL_MODELS = sisir_model_dahl()
+            segarkan_folder_kategori()
+            bot.edit_message_text(teks_submenu_folder_str("DAHL INFERENCE", mode_sekarang, "dahl_"), chat_id=chat_id, message_id=call.message.message_id, reply_markup=buat_submenu_folder(mode_sekarang, "dahl_", "refresh_dahl"), parse_mode="Markdown")
         elif data == "back_main":
             bot.edit_message_text(teks_menu_utama_str(mode_sekarang), chat_id=chat_id, message_id=call.message.message_id, reply_markup=buat_menu_utama(mode_sekarang), parse_mode="Markdown")
         elif data.startswith("lock_"):
@@ -442,7 +486,7 @@ def handle_start(message):
     chat_id = message.chat.id
     mode = USER_LOCKED_MODEL.get(chat_id, "auto")
     ket_mode = "OTOMATIS" if mode == "auto" else f"TERKUNCI PADA [{KATALOG_MODEL.get(mode, {}).get('nama', mode)}]"
-    bot.reply_to(message, f"🤖 Bot Multi-Model (GLM Unchained & ZenMux) Siap!\n🔒 Mode Aktif: {ket_mode}\n\n📌 Ketik /model untuk membuka Folder AI.")
+    bot.reply_to(message, f"🤖 Bot Multi-Model Siap!\n🔒 Mode Aktif: {ket_mode}\n\n📌 Ketik /model untuk membuka Folder AI (Dahl, ZenMux, dll).")
 
 def deteksi_tugas_auto(teks):
     t = teks.lower()
@@ -485,10 +529,10 @@ def handle_pesan_utama(message):
 
     bot.send_chat_action(chat_id, 'typing')
     
-    # Auto-Router: Jika teks biasa, prioritaskan GLM Unchained (ter_0 atau ter_2) lalu IndoSmart Qwen
-    if tugas == "koding": antrean, label_tugas = ["chatgpt", "zm_0", "deepseek", "indo", "qwen", "argon"], "Auto - Koding"
-    elif tugas == "recursive": antrean, label_tugas = ["recursive", "chatgpt", "indo", "ter_0", "best"], "Auto - Recursive"
-    else: antrean, label_tugas = ["ter_0", "ter_2", "indo", "chatgpt", "qwen", "zm_0", "luna", "deepseek"], "Auto - GLM/Teks Uncensored"
+    # Auto-Router untuk Teks Umum & Koding (Masukkan antrean dahl)
+    if tugas == "koding": antrean, label_tugas = ["chatgpt", "dahl_0", "zm_0", "deepseek", "indo", "qwen", "argon"], "Auto - Koding"
+    elif tugas == "recursive": antrean, label_tugas = ["recursive", "chatgpt", "dahl_0", "indo", "ter_0", "best"], "Auto - Recursive"
+    else: antrean, label_tugas = ["dahl_0", "ter_0", "indo", "chatgpt", "qwen", "zm_0", "luna", "deepseek"], "Auto - GLM/Teks Uncensored"
 
     for kode in antrean:
         if kode in KATALOG_MODEL:
