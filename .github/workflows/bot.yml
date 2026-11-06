@@ -36,6 +36,7 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
           ZENMUX_API_KEY: ${{ secrets.ZENMUX_API_KEY }}
+          TER_API_KEY: ${{ secrets.TER_API_KEY }}
           BEST_API_KEY: ${{ secrets.BEST_API_KEY }}
           INDO_API_KEY: ${{ secrets.INDO_API_KEY }}
           BEJO_API_KEY: ${{ secrets.BEJO_API_KEY }}
