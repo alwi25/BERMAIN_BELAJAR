@@ -35,6 +35,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
+          VASCOO_API_KEY: ${{ secrets.VASCOO_API_KEY }}
           DAHL_API_KEY: ${{ secrets.DAHL_API_KEY }}
           ZENMUX_API_KEY: ${{ secrets.ZENMUX_API_KEY }}
           TER_API_KEY: ${{ secrets.TER_API_KEY }}
