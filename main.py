@@ -16,6 +16,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 1. Kredensial Murni dari GitHub Secrets
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 PROXY_URL = os.environ.get("PROXY_URL", "").strip()
+VASCOO_API_KEY = os.environ.get("VASCOO_API_KEY", "").strip()
 DAHL_API_KEY = os.environ.get("DAHL_API_KEY", "").strip()
 ZENMUX_API_KEY = os.environ.get("ZENMUX_API_KEY", "").strip()
 TER_API_KEY = os.environ.get("TER_API_KEY", "").strip()
@@ -31,6 +32,7 @@ if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN kosong! Harap isi di GitHub Secrets.")
 
 # Daftar Endpoint Server
+VASCOO_CHAT_URL = "https://api.vascoo.my.id/v1/chat/completions"
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 ZENMUX_CANDIDATE_BASES = ["https://api.zenmux.ai/v1", "https://zenmux.ai/api/v1", "https://zenmux.ai/v1"]
 TER_BASE_URL = "https://ter.biz.id/v1"
@@ -189,8 +191,9 @@ def get_openrouter_models():
 
 OR_MODELS = get_openrouter_models() if OPENROUTER_KEY else ["openrouter/free"]
 
-# 3. Katalog Utama & Folder Sub-Kategori
+# 3. Katalog Utama (Termasuk Vascoo Uncensored-X) & Folder Sub-Kategori
 KATALOG_MODEL = {
+    "vascoo": {"provider": "vascoo", "model_id": "uncensored-x", "nama": "Vascoo Uncensored-X", "tugas": "Teks & Roleplay Tanpa Sensor (Vascoo)"},
     "chatgpt": {"provider": "openai", "model_id": "gpt-4o", "nama": "ChatGPT 4o (OpenAI)", "tugas": "Serba Bisa, Natural & Pintar"},
     "indo": {"provider": "indo", "model_id": "qwen-uncensored", "nama": "IndoSmart Qwen", "tugas": "Teks Tanpa Sensor (IndoSmart)"},
     "best": {"provider": "bestllm", "model_id": BEST_MODELS[0], "nama": "BestLLM Uncensored", "tugas": "Teks & Roleplay Tanpa Filter"},
@@ -206,7 +209,7 @@ KATALOG_MODEL = {
 }
 
 def segarkan_folder_kategori():
-    kunci_lama = [k for k in list(KATALOG_MODEL.keys()) if k.startswith("zm_") or k.startswith("ter_") or k.startswith("dahl_")]
+    kunci_lama = [k for k in list(KATALOG_MODEL.keys()) if k.startswith(("zm_", "ter_", "dahl_"))]
     for k in kunci_lama:
         del KATALOG_MODEL[k]
 
@@ -235,11 +238,11 @@ def analisis_penyebab_http(status_code, response_text):
     teks_kecil = (response_text or "").lower()
     if status_code in [401, 403]:
         return "API Key Mati / Ditolak Server (401/403). Periksa kembali API Key di GitHub Secrets."
-    elif status_code == 402 or "insufficient" in teks_kecil or "quota" in teks_kecil or "balance" in teks_kecil or "credit" in teks_kecil:
+    elif status_code == 402 or any(w in teks_kecil for w in ["insufficient", "quota", "balance", "credit"]):
         return "Kuota / Saldo Token Habis (402). Silakan isi ulang atau ganti API Key baru."
-    elif status_code == 429 or "rate limit" in teks_kecil or "too many" in teks_kecil:
+    elif status_code == 429 or any(w in teks_kecil for w in ["rate limit", "too many"]):
         return "Kuota Limit Tercapai / Terlalu Banyak Permintaan (429 Rate Limit)."
-    elif status_code == 404 or "not found" in teks_kecil or "does not exist" in teks_kecil:
+    elif status_code == 404 or any(w in teks_kecil for w in ["not found", "does not exist"]):
         return "Model Tidak Ditemukan / Sedang Dinonaktifkan oleh Server (404)."
     elif status_code in [500, 502, 503, 504]:
         return f"Server Down / Mengalami Gangguan Pusat (Error {status_code})."
@@ -255,11 +258,11 @@ def uji_satu_model_cepat(kode_model):
     provider = info["provider"]
     model_id = info["model_id"]
 
-    # Mesin visual Pollinations selalu aktif tanpa API Key
     if provider in ["pollinations", "video_engine"]:
         return True, "Layanan Visual Aktif (Gratis / Tanpa Kuota)."
 
     peta_kunci = {
+        "vascoo": (VASCOO_API_KEY, "VASCOO_API_KEY", VASCOO_CHAT_URL),
         "dahl": (DAHL_API_KEY, "DAHL_API_KEY", f"{DAHL_BASE_URL}/chat/completions"),
         "ter": (TER_API_KEY, "TER_API_KEY", f"{TER_BASE_URL}/chat/completions"),
         "zenmux": (ZENMUX_API_KEY, "ZENMUX_API_KEY", f"{ZENMUX_ACTIVE_BASE}/chat/completions"),
@@ -428,8 +431,9 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None):
     headers_umum = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
 
     try:
-        if provider in ["dahl", "ter", "indo", "openai", "bestllm", "bejo", "nocta"]:
+        if provider in ["vascoo", "dahl", "ter", "indo", "openai", "bestllm", "bejo", "nocta"]:
             peta_url = {
+                "vascoo": (VASCOO_CHAT_URL, VASCOO_API_KEY),
                 "dahl": (f"{DAHL_BASE_URL}/chat/completions", DAHL_API_KEY),
                 "ter": (f"{TER_BASE_URL}/chat/completions", TER_API_KEY),
                 "indo": (INDO_CHAT_URL, INDO_API_KEY),
@@ -537,7 +541,7 @@ def kerjakan_video(message, teks_user):
     instruksi_video = "Kamu AI Video Director. Buatlah: 1. Skenario Visual detik demi detik, 2. Prompt Teknis Bahasa Inggris untuk engine video AI."
     teks_skenario, penulis = "", "Video Director"
 
-    antrean_video = ["dahl_0", "ter_0", "zm_0", "indo", "chatgpt", "qwen", "recursive"]
+    antrean_video = ["vascoo", "dahl_0", "ter_0", "zm_0", "indo", "chatgpt", "qwen", "recursive"]
     for k in antrean_video:
         if k in KATALOG_MODEL:
             ok, hasil, label = eksekusi_tunggal(k, teks_user, instruksi_video)
@@ -664,7 +668,7 @@ def handle_cek_kuota(message):
     periksa_kesehatan_serentak()
 
     laporan = "📊 LAPORAN KESEHATAN SERVER & KUOTA API\n─────────────────────────\n"
-    daftar_utama = ["chatgpt", "indo", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
+    daftar_utama = ["vascoo", "chatgpt", "indo", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
     for k in daftar_utama:
         if k in KATALOG_MODEL:
             sehat = MODEL_HEALTH_CACHE.get(k, {})
@@ -761,7 +765,6 @@ def handle_semua_tombol(call):
                 return
 
             if kode_dipilih in KATALOG_MODEL:
-                # Tes langsung saat diklik untuk memastikan status terbaru
                 ok, alasan = uji_satu_model_cepat(kode_dipilih)
                 MODEL_HEALTH_CACHE[kode_dipilih] = {"active": ok, "reason": alasan}
                 info_m = KATALOG_MODEL[kode_dipilih]
@@ -771,11 +774,9 @@ def handle_semua_tombol(call):
                     bot.answer_callback_query(call.id, f"🟢 AKTIF! Terkunci ke: {info_m['model_id'][:20]}")
                     bot.edit_message_text(pesan_kunci, chat_id=chat_id, message_id=call.message.message_id)
                 else:
-                    # Tampilkan Pop-up Alert di layar pengguna berisi alasan mengapa model mati
                     teks_popup = f"🔴 MODEL MATI!\nModel: {info_m['model_id']}\nSebab: {alasan}"
                     bot.answer_callback_query(call.id, teks_popup[:195], show_alert=True)
 
-                    # Kirim juga penjelasan tertulis di bawah menu dan perbarui warna tombol
                     info_diagnosa = (
                         f"🔴 LAPORAN MODEL TIDAK AKTIF\n"
                         f"─────────────────────────\n"
@@ -801,6 +802,7 @@ def handle_start(message):
         f"🔒 Mode Aktif: {ket_mode}\n\n"
         f"📌 Perintah Utama:\n"
         f"• /model — Cek status 🟢 Aktif / 🔴 Mati semua model & kunci model.\n"
+        f"• /model vascoo — Langsung menguji & mengunci Vascoo (uncensored-x).\n"
         f"• /kuota — Lihat laporan kesehatan tiap server & penyebab error."
     )
 
@@ -872,11 +874,11 @@ def handle_pesan_utama(message):
 
     bot.send_chat_action(chat_id, 'typing')
     if tugas == "koding":
-        antrean, label_tugas = ["chatgpt", "dahl_0", "zm_0", "deepseek", "indo", "qwen", "argon", "recursive"], "Auto - Koding"
+        antrean, label_tugas = ["chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "indo", "qwen", "argon", "recursive"], "Auto - Koding"
     elif tugas == "recursive":
-        antrean, label_tugas = ["recursive", "chatgpt", "dahl_0", "indo", "ter_0", "best"], "Auto - Recursive"
+        antrean, label_tugas = ["recursive", "vascoo", "chatgpt", "dahl_0", "indo", "ter_0", "best"], "Auto - Recursive"
     else:
-        antrean, label_tugas = ["dahl_0", "ter_0", "indo", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
+        antrean, label_tugas = ["vascoo", "dahl_0", "ter_0", "indo", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
 
     for kode in antrean:
         if kode in KATALOG_MODEL:
