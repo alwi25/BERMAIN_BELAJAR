@@ -35,6 +35,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
+          GONKA_API_KEY: ${{ secrets.GONKA_API_KEY }}
           ITERA_API_KEY: ${{ secrets.ITERA_API_KEY }}
           VASCOO_API_KEY: ${{ secrets.VASCOO_API_KEY }}
           DAHL_API_KEY: ${{ secrets.DAHL_API_KEY }}
