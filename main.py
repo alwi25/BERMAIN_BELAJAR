@@ -16,6 +16,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 1. Kredensial Murni dari GitHub Secrets
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 PROXY_URL = os.environ.get("PROXY_URL", "").strip()
+GONKA_API_KEY = os.environ.get("GONKA_API_KEY", "").strip()
 ITERA_API_KEY = os.environ.get("ITERA_API_KEY", "").strip()
 VASCOO_API_KEY = os.environ.get("VASCOO_API_KEY", "").strip()
 DAHL_API_KEY = os.environ.get("DAHL_API_KEY", "").strip()
@@ -33,6 +34,7 @@ if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN kosong! Harap isi di GitHub Secrets.")
 
 # Daftar Endpoint Server
+GONKA_BASE_URL = "https://api.gonkarouter.io/v1"
 ITERA_CHAT_URL = "https://api.iteracompute.com/v1/chat/completions"
 VASCOO_CHAT_URL = "https://api.vascoo.my.id/v1/chat/completions"
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
@@ -97,8 +99,40 @@ def catat_pesan_ui(chat_id, msg_obj):
     if msg_obj.message_id not in UI_HISTORY_MESSAGES[chat_id]:
         UI_HISTORY_MESSAGES[chat_id].append(msg_obj.message_id)
 
-# 2. Penyisir Model (ZenMux, 9Router, Dahl, BestLLM, OpenRouter)
+# 2. Penyisir Model Otomatis (GonkaRouter, ZenMux, 9Router, Dahl, BestLLM, OpenRouter)
 ZENMUX_ACTIVE_BASE = ZENMUX_CANDIDATE_BASES[0]
+
+def sisir_model_gonka():
+    priorities = ["uncensored", "deepseek", "qwen", "claude", "gpt-4o", "llama-3.3", "coder", "hermes", "dolphin", "gemini"]
+    defaults = [
+        "deepseek-r1",
+        "deepseek-v3",
+        "qwen-2.5-coder-32b-instruct",
+        "qwen-2.5-72b-instruct",
+        "claude-3-7-sonnet",
+        "gpt-4o",
+        "llama-3.3-70b-instruct"
+    ]
+    found = []
+    if GONKA_API_KEY:
+        try:
+            headers = {"Authorization": f"Bearer {GONKA_API_KEY}", "User-Agent": "Mozilla/5.0"}
+            res = requests.get(f"{GONKA_BASE_URL}/models", headers=headers, timeout=10, verify=False)
+            if res.status_code == 200:
+                ids = [str(m.get("id")) for m in res.json().get("data", []) if m.get("id")]
+                for p in priorities:
+                    for mid in ids:
+                        if p in mid.lower() and mid not in found:
+                            found.append(mid)
+                for mid in ids:
+                    if mid not in found:
+                        found.append(mid)
+        except Exception:
+            pass
+    for d in defaults:
+        if d not in found:
+            found.append(d)
+    return found
 
 def sisir_model_zenmux():
     global ZENMUX_ACTIVE_BASE
@@ -173,6 +207,7 @@ def sisir_model_dahl():
             found.append(d)
     return found
 
+GONKA_MODELS = sisir_model_gonka()
 ZENMUX_MODELS = sisir_model_zenmux()
 TER_MODELS = sisir_model_ter()
 DAHL_MODELS = sisir_model_dahl()
@@ -220,7 +255,7 @@ def get_openrouter_models():
 
 OR_MODELS = get_openrouter_models() if OPENROUTER_KEY else ["openrouter/free"]
 
-# 3. Katalog Utama & Folder Sub-Kategori
+# 3. Katalog Utama & Folder Sub-Kategori (Termasuk GonkaRouter)
 KATALOG_MODEL = {
     "itera": {"provider": "itera", "model_id": "qwen/qwen3.8-27b", "nama": "Itera Qwen 3.8 27B (128K)", "tugas": "Koding, Tool Calling & Teks Panjang (IteraCompute)"},
     "vascoo": {"provider": "vascoo", "model_id": "uncensored-x", "nama": "Vascoo Uncensored-X", "tugas": "Teks & Roleplay Tanpa Sensor (Vascoo)"},
@@ -239,10 +274,15 @@ KATALOG_MODEL = {
 }
 
 def segarkan_folder_kategori():
-    kunci_lama = [k for k in list(KATALOG_MODEL.keys()) if k.startswith(("zm_", "ter_", "dahl_"))]
+    kunci_lama = [k for k in list(KATALOG_MODEL.keys()) if k.startswith(("gonka_", "zm_", "ter_", "dahl_"))]
     for k in kunci_lama:
         del KATALOG_MODEL[k]
 
+    for idx, m_id in enumerate(GONKA_MODELS[:12]):
+        KATALOG_MODEL[f"gonka_{idx}"] = {
+            "provider": "gonka", "model_id": m_id, "nama": f"Gonka: {m_id}",
+            "tugas": "High-Frequency Neural Gateway (GonkaRouter)"
+        }
     for idx, m_id in enumerate(ZENMUX_MODELS[:12]):
         KATALOG_MODEL[f"zm_{idx}"] = {
             "provider": "zenmux", "model_id": m_id, "nama": f"ZenMux: {m_id}",
@@ -292,6 +332,7 @@ def uji_satu_model_cepat(kode_model):
         return True, "Layanan Visual Aktif (Gratis / Tanpa Kuota)."
 
     peta_kunci = {
+        "gonka": (GONKA_API_KEY, "GONKA_API_KEY", f"{GONKA_BASE_URL}/chat/completions"),
         "itera": (ITERA_API_KEY, "ITERA_API_KEY", ITERA_CHAT_URL),
         "vascoo": (VASCOO_API_KEY, "VASCOO_API_KEY", VASCOO_CHAT_URL),
         "dahl": (DAHL_API_KEY, "DAHL_API_KEY", f"{DAHL_BASE_URL}/chat/completions"),
@@ -339,7 +380,6 @@ def uji_satu_model_cepat(kode_model):
             "max_tokens": 5
         }
         try:
-            # Waktu tunggu 15 detik agar server antrean gratis seperti IteraCompute sempat merespons
             res = requests.post(url_target, headers=headers, json=payload, timeout=15, verify=False)
             if res.status_code == 200:
                 data = res.json()
@@ -391,10 +431,14 @@ def ambil_status_kategori(awalan):
 def buat_menu_utama(mode_aktif):
     markup = InlineKeyboardMarkup(row_width=2)
 
+    ikon_gk, akt_gk, tot_gk = ambil_status_kategori("gonka_")
     ikon_zm, akt_zm, tot_zm = ambil_status_kategori("zm_")
     ikon_ter, akt_ter, tot_ter = ambil_status_kategori("ter_")
     ikon_dahl, akt_dahl, tot_dahl = ambil_status_kategori("dahl_")
 
+    markup.row(InlineKeyboardButton(
+        f"{ikon_gk}📂 GONKAROUTER ({akt_gk}/{tot_gk} Aktif)", callback_data="cat_gonka"
+    ))
     markup.row(InlineKeyboardButton(
         f"{ikon_zm}📂 ZENMUX ({akt_zm}/{tot_zm} Aktif)", callback_data="cat_zenmux"
     ))
@@ -407,7 +451,7 @@ def buat_menu_utama(mode_aktif):
 
     tombol_list = []
     for kode, info in KATALOG_MODEL.items():
-        if kode.startswith(("zm_", "ter_", "dahl_")):
+        if kode.startswith(("gonka_", "zm_", "ter_", "dahl_")):
             continue
         ikon = ambil_ikon_status(kode, mode_aktif)
         tombol_list.append(InlineKeyboardButton(f"{ikon} {kode.upper()} ({info['nama'][:10]})", callback_data=f"lock_{kode}"))
@@ -431,7 +475,9 @@ def buat_submenu_folder(mode_aktif, awalan, callback_refresh):
 
 def buat_tombol_kembali_menu(kode_model):
     markup = InlineKeyboardMarkup()
-    if kode_model.startswith("zm_"):
+    if kode_model.startswith("gonka_"):
+        markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder GonkaRouter", callback_data="cat_gonka"))
+    elif kode_model.startswith("zm_"):
         markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder ZenMux", callback_data="cat_zenmux"))
     elif kode_model.startswith("ter_"):
         markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder 9Router", callback_data="cat_ter"))
@@ -474,8 +520,9 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None):
     headers_umum = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
 
     try:
-        if provider in ["itera", "vascoo", "dahl", "ter", "indo", "openai", "bestllm", "bejo", "nocta"]:
+        if provider in ["gonka", "itera", "vascoo", "dahl", "ter", "indo", "openai", "bestllm", "bejo", "nocta"]:
             peta_url = {
+                "gonka": (f"{GONKA_BASE_URL}/chat/completions", GONKA_API_KEY),
                 "itera": (ITERA_CHAT_URL, ITERA_API_KEY),
                 "vascoo": (VASCOO_CHAT_URL, VASCOO_API_KEY),
                 "dahl": (f"{DAHL_BASE_URL}/chat/completions", DAHL_API_KEY),
@@ -585,7 +632,7 @@ def kerjakan_video(message, teks_user):
     instruksi_video = "Kamu AI Video Director. Buatlah: 1. Skenario Visual detik demi detik, 2. Prompt Teknis Bahasa Inggris untuk engine video AI."
     teks_skenario, penulis = "", "Video Director"
 
-    antrean_video = ["itera", "vascoo", "dahl_0", "ter_0", "zm_0", "indo", "chatgpt", "qwen", "recursive"]
+    antrean_video = ["gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "zm_0", "indo", "chatgpt", "qwen", "recursive"]
     for k in antrean_video:
         if k in KATALOG_MODEL:
             ok, hasil, label = eksekusi_tunggal(k, teks_user, instruksi_video)
@@ -664,7 +711,6 @@ def handle_command_model(message):
     chat_id, cmd_text = message.chat.id, message.text.strip()
     mode_sekarang = USER_LOCKED_MODEL.get(chat_id, "auto")
 
-    # Hapus semua pesan menu/instruksi/laporan model sebelumnya agar terganti yang baru
     bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
 
     arg = re.sub(r'[\(\)\[\]\{\}]', '', cmd_text.replace('/model', '').replace('/cek', '').strip().lower())
@@ -683,6 +729,18 @@ def handle_command_model(message):
         except Exception:
             msg_baru = bot.send_message(chat_id, teks_menu_utama_str(mode_sekarang), reply_markup=buat_menu_utama(mode_sekarang))
             catat_pesan_ui(chat_id, msg_baru)
+        return
+
+    if arg == "gonka":
+        msg_wait = bot.send_message(chat_id, "🔍 Memeriksa kesehatan model di dalam GonkaRouter...")
+        catat_pesan_ui(chat_id, msg_wait)
+        periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("gonka_")])
+        bot.edit_message_text(
+            teks_submenu_folder_str("GONKAROUTER AI", mode_sekarang, "gonka_"),
+            chat_id=chat_id,
+            message_id=msg_wait.message_id,
+            reply_markup=buat_submenu_folder(mode_sekarang, "gonka_", "refresh_gonka")
+        )
         return
 
     kode_cocok = arg if arg in KATALOG_MODEL or arg == "auto" else next((k for k, v in KATALOG_MODEL.items() if arg == v["model_id"].lower() or arg in v["model_id"].lower()), None)
@@ -729,7 +787,7 @@ def handle_cek_kuota(message):
     periksa_kesehatan_serentak()
 
     laporan = "📊 LAPORAN KESEHATAN SERVER & KUOTA API\n─────────────────────────\n"
-    daftar_utama = ["itera", "vascoo", "chatgpt", "indo", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
+    daftar_utama = ["gonka_0", "itera", "vascoo", "chatgpt", "indo", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
     for k in daftar_utama:
         if k in KATALOG_MODEL:
             sehat = MODEL_HEALTH_CACHE.get(k, {})
@@ -742,12 +800,11 @@ def handle_cek_kuota(message):
 # 9. Handler Klik Tombol (Mengganti Tampilan di Kotak yang Sama Tanpa Menumpuk Pesan)
 @bot.callback_query_handler(func=lambda call: True)
 def handle_semua_tombol(call):
-    global ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
+    global GONKA_MODELS, ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
     chat_id, data = call.message.chat.id, call.data
     msg_id = call.message.message_id
     mode_sekarang = USER_LOCKED_MODEL.get(chat_id, "auto")
 
-    # Pastikan kotak yang sedang diklik tercatat sebagai UI aktif, dan hapus sisanya jika ada
     daftar_ui = UI_HISTORY_MESSAGES.get(chat_id, [])
     for old_id in list(daftar_ui):
         if old_id != msg_id:
@@ -766,6 +823,13 @@ def handle_semua_tombol(call):
                 chat_id=chat_id,
                 message_id=msg_id,
                 reply_markup=buat_menu_utama(mode_sekarang)
+            )
+        elif data == "cat_gonka":
+            bot.edit_message_text(
+                teks_submenu_folder_str("GONKAROUTER AI", mode_sekarang, "gonka_"),
+                chat_id=chat_id,
+                message_id=msg_id,
+                reply_markup=buat_submenu_folder(mode_sekarang, "gonka_", "refresh_gonka")
             )
         elif data == "cat_zenmux":
             bot.edit_message_text(
@@ -787,6 +851,17 @@ def handle_semua_tombol(call):
                 chat_id=chat_id,
                 message_id=msg_id,
                 reply_markup=buat_submenu_folder(mode_sekarang, "dahl_", "refresh_dahl")
+            )
+        elif data == "refresh_gonka":
+            bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder GonkaRouter...")
+            GONKA_MODELS = sisir_model_gonka()
+            segarkan_folder_kategori()
+            periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("gonka_")])
+            bot.edit_message_text(
+                teks_submenu_folder_str("GONKAROUTER AI", mode_sekarang, "gonka_"),
+                chat_id=chat_id,
+                message_id=msg_id,
+                reply_markup=buat_submenu_folder(mode_sekarang, "gonka_", "refresh_gonka")
             )
         elif data == "refresh_zm":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder ZenMux...")
@@ -849,7 +924,6 @@ def handle_semua_tombol(call):
                     teks_popup = f"🔴 MODEL MATI!\nModel: {info_m['model_id']}\nSebab: {alasan}"
                     bot.answer_callback_query(call.id, teks_popup[:195], show_alert=True)
 
-                    # Edit kotak yang sama (TIDAK mengirim pesan baru ke bawah agar tidak menumpuk)
                     info_diagnosa = (
                         f"🔴 LAPORAN MODEL TIDAK AKTIF\n"
                         f"─────────────────────────\n"
@@ -881,9 +955,8 @@ def handle_start(message):
         f"🤖 Bot Multi-Model dengan Pemantau Status (🟢/🔴) Siap!\n"
         f"🔒 Mode Aktif: {ket_mode}\n\n"
         f"📌 Perintah Utama:\n"
-        f"• /model — Cek status 🟢 Aktif / 🔴 Mati semua model & kunci model.\n"
-        f"• /model itera — Langsung menguji & mengunci IteraCompute.\n"
-        f"• /model vascoo — Langsung menguji & mengunci Vascoo.\n"
+        f"• /model — Cek status 🟢 Aktif / 🔴 Mati semua model & buka Folder Kategori.\n"
+        f"• /model gonka — Langsung membuka folder model GonkaRouter.\n"
         f"• /kuota — Lihat laporan kesehatan tiap server & penyebab error."
     )
     catat_pesan_ui(chat_id, msg)
@@ -965,11 +1038,11 @@ def handle_pesan_utama(message):
 
     bot.send_chat_action(chat_id, 'typing')
     if tugas == "koding":
-        antrean, label_tugas = ["itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "indo", "qwen", "argon", "recursive"], "Auto - Koding"
+        antrean, label_tugas = ["gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "indo", "qwen", "argon", "recursive"], "Auto - Koding"
     elif tugas == "recursive":
-        antrean, label_tugas = ["recursive", "itera", "vascoo", "chatgpt", "dahl_0", "indo", "ter_0", "best"], "Auto - Recursive"
+        antrean, label_tugas = ["recursive", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "indo", "ter_0", "best"], "Auto - Recursive"
     else:
-        antrean, label_tugas = ["itera", "vascoo", "dahl_0", "ter_0", "indo", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
+        antrean, label_tugas = ["gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "indo", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
 
     for kode in antrean:
         if kode in KATALOG_MODEL:
