@@ -66,9 +66,36 @@ bot = telebot.TeleBot(BOT_TOKEN)
 USER_LOCKED_MODEL = {}
 WAITING_MODEL_CHOICE = {}
 
+# Penyimpanan Riwayat ID Pesan Menu/Instruksi Sebelumnya (Untuk Dihapus Otomatis)
+UI_HISTORY_MESSAGES = {}
+
 # Penyimpanan Status Kesehatan Model (🟢 Aktif / 🔴 Mati beserta alasannya)
 MODEL_HEALTH_CACHE = {}
 LAST_HEALTH_CHECK = 0
+
+# Fungsi Pembersih Pesan Instruksi/Menu Sebelumnya Agar Tidak Menumpuk
+def bersihkan_instruksi_sebelumnya(chat_id, user_msg_id=None):
+    if user_msg_id:
+        try:
+            bot.delete_message(chat_id, user_msg_id)
+        except Exception:
+            pass
+
+    daftar_id_lama = UI_HISTORY_MESSAGES.get(chat_id, [])
+    for mid in daftar_id_lama:
+        try:
+            bot.delete_message(chat_id, mid)
+        except Exception:
+            pass
+    UI_HISTORY_MESSAGES[chat_id] = []
+
+def catat_pesan_ui(chat_id, msg_obj):
+    if not msg_obj:
+        return
+    if chat_id not in UI_HISTORY_MESSAGES:
+        UI_HISTORY_MESSAGES[chat_id] = []
+    if msg_obj.message_id not in UI_HISTORY_MESSAGES[chat_id]:
+        UI_HISTORY_MESSAGES[chat_id].append(msg_obj.message_id)
 
 # 2. Penyisir Model (ZenMux, 9Router, Dahl, BestLLM, OpenRouter)
 ZENMUX_ACTIVE_BASE = ZENMUX_CANDIDATE_BASES[0]
@@ -193,7 +220,7 @@ def get_openrouter_models():
 
 OR_MODELS = get_openrouter_models() if OPENROUTER_KEY else ["openrouter/free"]
 
-# 3. Katalog Utama (Termasuk IteraCompute Qwen 3.8 27B) & Folder Sub-Kategori
+# 3. Katalog Utama & Folder Sub-Kategori
 KATALOG_MODEL = {
     "itera": {"provider": "itera", "model_id": "qwen/qwen3.8-27b", "nama": "Itera Qwen 3.8 27B (128K)", "tugas": "Koding, Tool Calling & Teks Panjang (IteraCompute)"},
     "vascoo": {"provider": "vascoo", "model_id": "uncensored-x", "nama": "Vascoo Uncensored-X", "tugas": "Teks & Roleplay Tanpa Sensor (Vascoo)"},
@@ -312,7 +339,8 @@ def uji_satu_model_cepat(kode_model):
             "max_tokens": 5
         }
         try:
-            res = requests.post(url_target, headers=headers, json=payload, timeout=12, verify=False)
+            # Waktu tunggu 15 detik agar server antrean gratis seperti IteraCompute sempat merespons
+            res = requests.post(url_target, headers=headers, json=payload, timeout=15, verify=False)
             if res.status_code == 200:
                 data = res.json()
                 if "choices" in data and len(data["choices"]) > 0:
@@ -324,7 +352,7 @@ def uji_satu_model_cepat(kode_model):
             else:
                 return False, analisis_penyebab_http(res.status_code, res.text)
         except requests.exceptions.Timeout:
-            return False, "Server Down / Timeout (Tidak merespons lebih dari 12 detik)."
+            return False, "Server Down / Antrean Penuh (Timeout > 15 detik)."
         except requests.exceptions.ConnectionError:
             return False, "Server Down / Domain Tidak Dapat Dihubungi (Connection Error)."
         except Exception as e:
@@ -399,6 +427,17 @@ def buat_submenu_folder(mode_aktif, awalan, callback_refresh):
     markup.add(*tombol)
     markup.row(InlineKeyboardButton("🔄 Cek Status & Sisir Ulang Folder Ini", callback_data=callback_refresh))
     markup.row(InlineKeyboardButton("⬅️ Kembali ke Menu Utama", callback_data="back_main"))
+    return markup
+
+def buat_tombol_kembali_menu(kode_model):
+    markup = InlineKeyboardMarkup()
+    if kode_model.startswith("zm_"):
+        markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder ZenMux", callback_data="cat_zenmux"))
+    elif kode_model.startswith("ter_"):
+        markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder 9Router", callback_data="cat_ter"))
+    elif kode_model.startswith("dahl_"):
+        markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder Dahl", callback_data="cat_dahl"))
+    markup.row(InlineKeyboardButton("🎛 Kembali ke Menu Utama Model", callback_data="back_main"))
     return markup
 
 def kunci_model_pilihan(chat_id, kode_pilihan):
@@ -594,7 +633,7 @@ def teks_menu_utama_str(mode_sekarang):
         f"─────────────────────────\n"
         f"Keterangan Indikator Tombol:\n"
         f"• 🟢 = Model Aktif (Klik untuk mengunci 🔒)\n"
-        f"• 🔴 = Model Mati (Klik untuk lihat alasan error: Server Down / Kuota Habis / API Key Mati)\n"
+        f"• 🔴 = Model Mati (Klik untuk lihat alasan error)\n"
         f"─────────────────────────\n"
         f"👇 Pilih Kategori atau Model di bawah ini:"
     )
@@ -619,15 +658,19 @@ def teks_submenu_folder_str(nama_kategori, mode_sekarang, awalan):
         f"👇 Klik 🟢 untuk mengunci, atau klik 🔴 untuk detail penyebab mati:"
     )
 
-# 8. Perintah /model, /cek, dan /kuota
+# 8. Perintah /model, /cek, dan /kuota (Otomatis Menghapus Instruksi Sebelumnya)
 @bot.message_handler(commands=['model', 'cek'])
 def handle_command_model(message):
     chat_id, cmd_text = message.chat.id, message.text.strip()
     mode_sekarang = USER_LOCKED_MODEL.get(chat_id, "auto")
 
+    # Hapus semua pesan menu/instruksi/laporan model sebelumnya agar terganti yang baru
+    bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
+
     arg = re.sub(r'[\(\)\[\]\{\}]', '', cmd_text.replace('/model', '').replace('/cek', '').strip().lower())
     if not arg:
-        msg_wait = bot.reply_to(message, "🔍 Memeriksa status 🟢 Aktif / 🔴 Mati seluruh model AI secara real-time...")
+        msg_wait = bot.send_message(chat_id, "🔍 Memeriksa status 🟢 Aktif / 🔴 Mati seluruh model AI...")
+        catat_pesan_ui(chat_id, msg_wait)
         periksa_kesehatan_serentak()
         WAITING_MODEL_CHOICE[chat_id] = True
         try:
@@ -638,15 +681,18 @@ def handle_command_model(message):
                 reply_markup=buat_menu_utama(mode_sekarang)
             )
         except Exception:
-            bot.reply_to(message, teks_menu_utama_str(mode_sekarang), reply_markup=buat_menu_utama(mode_sekarang))
+            msg_baru = bot.send_message(chat_id, teks_menu_utama_str(mode_sekarang), reply_markup=buat_menu_utama(mode_sekarang))
+            catat_pesan_ui(chat_id, msg_baru)
         return
 
     kode_cocok = arg if arg in KATALOG_MODEL or arg == "auto" else next((k for k, v in KATALOG_MODEL.items() if arg == v["model_id"].lower() or arg in v["model_id"].lower()), None)
     if kode_cocok:
         if kode_cocok == "auto":
-            bot.reply_to(message, kunci_model_pilihan(chat_id, "auto"))
+            msg_auto = bot.send_message(chat_id, kunci_model_pilihan(chat_id, "auto"))
+            catat_pesan_ui(chat_id, msg_auto)
             return
-        msg_tes = bot.reply_to(message, f"🔍 Menguji kesehatan model [{KATALOG_MODEL[kode_cocok]['nama']}]...")
+        msg_tes = bot.send_message(chat_id, f"🔍 Menguji kesehatan model [{KATALOG_MODEL[kode_cocok]['nama']}]...")
+        catat_pesan_ui(chat_id, msg_tes)
         ok, alasan = uji_satu_model_cepat(kode_cocok)
         MODEL_HEALTH_CACHE[kode_cocok] = {"active": ok, "reason": alasan}
         if ok:
@@ -660,16 +706,26 @@ def handle_command_model(message):
                 f"🆔 ID Model   : {info_m['model_id']}\n"
                 f"⚠️ Penyebab   : {alasan}\n"
                 f"─────────────────────────\n"
-                f"💡 Silakan pilih model lain yang berstatus 🟢 Hijau melalui menu /model."
+                f"💡 Silakan pilih model lain yang berstatus 🟢 Hijau."
             )
-            bot.edit_message_text(pesan_mati, chat_id=chat_id, message_id=msg_tes.message_id)
+            bot.edit_message_text(
+                pesan_mati,
+                chat_id=chat_id,
+                message_id=msg_tes.message_id,
+                reply_markup=buat_tombol_kembali_menu(kode_cocok)
+            )
     else:
         WAITING_MODEL_CHOICE[chat_id] = True
-        bot.reply_to(message, f"❌ Model '{arg}' tidak ditemukan.", reply_markup=buat_menu_utama(mode_sekarang))
+        msg_err = bot.send_message(chat_id, f"❌ Model '{arg}' tidak ditemukan.", reply_markup=buat_menu_utama(mode_sekarang))
+        catat_pesan_ui(chat_id, msg_err)
 
 @bot.message_handler(commands=['kuota', 'saldo'])
 def handle_cek_kuota(message):
-    msg = bot.reply_to(message, "🔍 Memeriksa status seluruh server & sisa kuota...")
+    chat_id = message.chat.id
+    bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
+
+    msg = bot.send_message(chat_id, "🔍 Memeriksa status seluruh server & sisa kuota...")
+    catat_pesan_ui(chat_id, msg)
     periksa_kesehatan_serentak()
 
     laporan = "📊 LAPORAN KESEHATAN SERVER & KUOTA API\n─────────────────────────\n"
@@ -681,14 +737,25 @@ def handle_cek_kuota(message):
             ket = sehat.get("reason", "Belum dicek")
             laporan += f"{ikon} {KATALOG_MODEL[k]['nama']}\n   └ Status: {ket}\n"
 
-    bot.edit_message_text(laporan[:4000], chat_id=message.chat.id, message_id=msg.message_id)
+    bot.edit_message_text(laporan[:4000], chat_id=chat_id, message_id=msg.message_id)
 
-# 9. Handler Klik Tombol (Menampilkan Diagnostik Jika Klik Model 🔴 Merah)
+# 9. Handler Klik Tombol (Mengganti Tampilan di Kotak yang Sama Tanpa Menumpuk Pesan)
 @bot.callback_query_handler(func=lambda call: True)
 def handle_semua_tombol(call):
     global ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
     chat_id, data = call.message.chat.id, call.data
+    msg_id = call.message.message_id
     mode_sekarang = USER_LOCKED_MODEL.get(chat_id, "auto")
+
+    # Pastikan kotak yang sedang diklik tercatat sebagai UI aktif, dan hapus sisanya jika ada
+    daftar_ui = UI_HISTORY_MESSAGES.get(chat_id, [])
+    for old_id in list(daftar_ui):
+        if old_id != msg_id:
+            try:
+                bot.delete_message(chat_id, old_id)
+            except Exception:
+                pass
+    UI_HISTORY_MESSAGES[chat_id] = [msg_id]
 
     try:
         if data == "ping_all":
@@ -697,28 +764,28 @@ def handle_semua_tombol(call):
             bot.edit_message_text(
                 teks_menu_utama_str(mode_sekarang),
                 chat_id=chat_id,
-                message_id=call.message.message_id,
+                message_id=msg_id,
                 reply_markup=buat_menu_utama(mode_sekarang)
             )
         elif data == "cat_zenmux":
             bot.edit_message_text(
                 teks_submenu_folder_str("ZENMUX AI", mode_sekarang, "zm_"),
                 chat_id=chat_id,
-                message_id=call.message.message_id,
+                message_id=msg_id,
                 reply_markup=buat_submenu_folder(mode_sekarang, "zm_", "refresh_zm")
             )
         elif data == "cat_ter":
             bot.edit_message_text(
                 teks_submenu_folder_str("9ROUTER GLM", mode_sekarang, "ter_"),
                 chat_id=chat_id,
-                message_id=call.message.message_id,
+                message_id=msg_id,
                 reply_markup=buat_submenu_folder(mode_sekarang, "ter_", "refresh_ter")
             )
         elif data == "cat_dahl":
             bot.edit_message_text(
                 teks_submenu_folder_str("DAHL INFERENCE", mode_sekarang, "dahl_"),
                 chat_id=chat_id,
-                message_id=call.message.message_id,
+                message_id=msg_id,
                 reply_markup=buat_submenu_folder(mode_sekarang, "dahl_", "refresh_dahl")
             )
         elif data == "refresh_zm":
@@ -729,7 +796,7 @@ def handle_semua_tombol(call):
             bot.edit_message_text(
                 teks_submenu_folder_str("ZENMUX AI", mode_sekarang, "zm_"),
                 chat_id=chat_id,
-                message_id=call.message.message_id,
+                message_id=msg_id,
                 reply_markup=buat_submenu_folder(mode_sekarang, "zm_", "refresh_zm")
             )
         elif data == "refresh_ter":
@@ -740,7 +807,7 @@ def handle_semua_tombol(call):
             bot.edit_message_text(
                 teks_submenu_folder_str("9ROUTER GLM", mode_sekarang, "ter_"),
                 chat_id=chat_id,
-                message_id=call.message.message_id,
+                message_id=msg_id,
                 reply_markup=buat_submenu_folder(mode_sekarang, "ter_", "refresh_ter")
             )
         elif data == "refresh_dahl":
@@ -751,14 +818,14 @@ def handle_semua_tombol(call):
             bot.edit_message_text(
                 teks_submenu_folder_str("DAHL INFERENCE", mode_sekarang, "dahl_"),
                 chat_id=chat_id,
-                message_id=call.message.message_id,
+                message_id=msg_id,
                 reply_markup=buat_submenu_folder(mode_sekarang, "dahl_", "refresh_dahl")
             )
         elif data == "back_main":
             bot.edit_message_text(
                 teks_menu_utama_str(mode_sekarang),
                 chat_id=chat_id,
-                message_id=call.message.message_id,
+                message_id=msg_id,
                 reply_markup=buat_menu_utama(mode_sekarang)
             )
         elif data.startswith("lock_"):
@@ -766,7 +833,7 @@ def handle_semua_tombol(call):
             if kode_dipilih == "auto":
                 pesan_auto = kunci_model_pilihan(chat_id, "auto")
                 bot.answer_callback_query(call.id, "🔄 Mode Otomatis Aktif!")
-                bot.edit_message_text(pesan_auto, chat_id=chat_id, message_id=call.message.message_id)
+                bot.edit_message_text(pesan_auto, chat_id=chat_id, message_id=msg_id)
                 return
 
             if kode_dipilih in KATALOG_MODEL:
@@ -777,11 +844,12 @@ def handle_semua_tombol(call):
                 if ok:
                     pesan_kunci = kunci_model_pilihan(chat_id, kode_dipilih)
                     bot.answer_callback_query(call.id, f"🟢 AKTIF! Terkunci ke: {info_m['model_id'][:20]}")
-                    bot.edit_message_text(pesan_kunci, chat_id=chat_id, message_id=call.message.message_id)
+                    bot.edit_message_text(pesan_kunci, chat_id=chat_id, message_id=msg_id)
                 else:
                     teks_popup = f"🔴 MODEL MATI!\nModel: {info_m['model_id']}\nSebab: {alasan}"
                     bot.answer_callback_query(call.id, teks_popup[:195], show_alert=True)
 
+                    # Edit kotak yang sama (TIDAK mengirim pesan baru ke bawah agar tidak menumpuk)
                     info_diagnosa = (
                         f"🔴 LAPORAN MODEL TIDAK AKTIF\n"
                         f"─────────────────────────\n"
@@ -790,27 +858,35 @@ def handle_semua_tombol(call):
                         f"❌ Status     : TIDAK AKTIF (Merah)\n"
                         f"📋 Penyebab   : {alasan}\n"
                         f"─────────────────────────\n"
-                        f"💡 Model ini tidak dikunci agar bot kamu tidak macet. Silakan klik tombol model lain yang berwarna 🟢 HIJAU."
+                        f"💡 Model ini tidak dikunci agar bot kamu tidak macet. Silakan kembali dan pilih model yang berwarna 🟢 HIJAU."
                     )
-                    bot.send_message(chat_id, info_diagnosa)
+                    bot.edit_message_text(
+                        info_diagnosa,
+                        chat_id=chat_id,
+                        message_id=msg_id,
+                        reply_markup=buat_tombol_kembali_menu(kode_dipilih)
+                    )
     except Exception as e:
         print(f"Callback error: {e}")
 
 @bot.message_handler(commands=['start', 'help', 'status'])
 def handle_start(message):
     chat_id = message.chat.id
+    bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
+
     mode = USER_LOCKED_MODEL.get(chat_id, "auto")
     ket_mode = "OTOMATIS" if mode == "auto" else f"TERKUNCI PADA [{KATALOG_MODEL.get(mode, {}).get('nama', mode)}]"
-    bot.reply_to(
-        message,
+    msg = bot.send_message(
+        chat_id,
         f"🤖 Bot Multi-Model dengan Pemantau Status (🟢/🔴) Siap!\n"
         f"🔒 Mode Aktif: {ket_mode}\n\n"
         f"📌 Perintah Utama:\n"
         f"• /model — Cek status 🟢 Aktif / 🔴 Mati semua model & kunci model.\n"
-        f"• /model itera — Langsung menguji & mengunci IteraCompute (qwen/qwen3.8-27b).\n"
-        f"• /model vascoo — Langsung menguji & mengunci Vascoo (uncensored-x).\n"
+        f"• /model itera — Langsung menguji & mengunci IteraCompute.\n"
+        f"• /model vascoo — Langsung menguji & mengunci Vascoo.\n"
         f"• /kuota — Lihat laporan kesehatan tiap server & penyebab error."
     )
+    catat_pesan_ui(chat_id, msg)
 
 def deteksi_tugas_auto(teks):
     t = teks.lower()
@@ -834,15 +910,23 @@ def handle_pesan_utama(message):
     if WAITING_MODEL_CHOICE.get(chat_id, False):
         kode_ketik = teks_bersih if teks_bersih in KATALOG_MODEL or teks_bersih == "auto" else next((k for k, v in KATALOG_MODEL.items() if teks_bersih == v["model_id"].lower() or (len(teks_bersih) >= 3 and teks_bersih in v["model_id"].lower())), None)
         if kode_ketik:
+            bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
             if kode_ketik == "auto":
-                bot.reply_to(message, kunci_model_pilihan(chat_id, "auto"))
+                msg_a = bot.send_message(chat_id, kunci_model_pilihan(chat_id, "auto"))
+                catat_pesan_ui(chat_id, msg_a)
                 return
             ok, alasan = uji_satu_model_cepat(kode_ketik)
             MODEL_HEALTH_CACHE[kode_ketik] = {"active": ok, "reason": alasan}
             if ok:
-                bot.reply_to(message, kunci_model_pilihan(chat_id, kode_ketik))
+                msg_k = bot.send_message(chat_id, kunci_model_pilihan(chat_id, kode_ketik))
+                catat_pesan_ui(chat_id, msg_k)
             else:
-                bot.reply_to(message, f"🔴 Model [{KATALOG_MODEL[kode_ketik]['nama']}] sedang MATI!\nPenyebab: {alasan}\n\nKetik /model untuk memilih model yang berwarna 🟢 Hijau.")
+                msg_m = bot.send_message(
+                    chat_id,
+                    f"🔴 Model [{KATALOG_MODEL[kode_ketik]['nama']}] sedang MATI!\nPenyebab: {alasan}",
+                    reply_markup=buat_tombol_kembali_menu(kode_ketik)
+                )
+                catat_pesan_ui(chat_id, msg_m)
             return
         else:
             WAITING_MODEL_CHOICE[chat_id] = False
@@ -861,12 +945,13 @@ def handle_pesan_utama(message):
             if ok:
                 kirim_pesan_rapi(message, hasil, nama_pekerja, f"Terkunci ({KATALOG_MODEL[mode_terkunci]['model_id']})")
             else:
-                bot.reply_to(
+                msg_err = bot.reply_to(
                     message,
                     f"🔴 Model [{nama_pekerja}] yang sedang kamu kunci tiba-tiba berhenti merespons!\n"
                     f"📋 Penyebab: {hasil}\n\n"
                     f"💡 Ketik /model untuk memilih model lain yang berstatus 🟢 Hijau, atau ketik /model auto."
                 )
+                catat_pesan_ui(chat_id, msg_err)
             return
 
     tugas = deteksi_tugas_auto(teks)
