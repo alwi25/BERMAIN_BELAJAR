@@ -34,20 +34,20 @@ OPENROUTER_KEY = os.environ.get("API_KEY", "").strip()
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN kosong! Harap isi di GitHub Secrets.")
 
-# Daftar Endpoint Server
+# Daftar Base URL Server (Format Standar untuk call_ai_endpoint)
 ONEKEY_BASE_URL = "https://api.onekeyllmapi.com/v1"
 GONKA_BASE_URL = "https://api.gonkarouter.io/v1"
-ITERA_CHAT_URL = "https://api.iteracompute.com/v1/chat/completions"
-VASCOO_CHAT_URL = "https://api.vascoo.my.id/v1/chat/completions"
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+ITERA_BASE_URL = "https://api.iteracompute.com/v1"
+VASCOO_BASE_URL = "https://api.vascoo.my.id/v1"
+OPENAI_BASE_URL = "https://api.openai.com/v1"
 ZENMUX_CANDIDATE_BASES = ["https://api.zenmux.ai/v1", "https://zenmux.ai/api/v1", "https://zenmux.ai/v1"]
 TER_BASE_URL = "https://ter.biz.id/v1"
 DAHL_BASE_URL = "https://inference.dahl.global/v1"
-BEST_CHAT_URL = "https://api.bestllmapi.com/v1/chat/completions"
-INDO_CHAT_URL = "https://indosmartrouter.cloud/v1/chat/completions"
-BEJO_URL = "https://bejoxxx.tech/v1/chat/completions"
-NOCTA_URL = "https://nocta-digital.web.id/v1/chat/completions"
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+BEST_BASE_URL = "https://api.bestllmapi.com/v1"
+INDO_BASE_URL = "https://indosmartrouter.cloud/v1"
+BEJO_BASE_URL = "https://bejoxxx.tech/v1"
+NOCTA_BASE_URL = "https://nocta-digital.web.id/v1"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 gemini_client = None
 if GEMINI_API_KEY:
@@ -69,13 +69,73 @@ if PROXY_URL:
 bot = telebot.TeleBot(BOT_TOKEN)
 USER_LOCKED_MODEL = {}
 WAITING_MODEL_CHOICE = {}
-
-# Penyimpanan Riwayat ID Pesan Menu/Instruksi Sebelumnya (Untuk Dihapus Otomatis)
 UI_HISTORY_MESSAGES = {}
+CHAT_HISTORY = {}
 
-# Penyimpanan Status Kesehatan Model (🟢 Aktif / 🔴 Mati beserta alasannya)
 MODEL_HEALTH_CACHE = {}
 LAST_HEALTH_CHECK = 0
+
+# =========================================================================
+# FUNGSI PAYLOAD & PEMANGGIL ENDPOINT AI (TERINTEGRASI RIWAYAT PERCAKAPAN)
+# =========================================================================
+def format_messages_payload(user_prompt, custom_system_prompt=None, chat_history=None):
+    """
+    Menyusun struktur messages[] untuk endpoint OpenAI-compatible.
+    """
+    messages = []
+
+    # 1. Suntikkan instruksi sistem di awal array
+    default_system = (
+        "Kamu adalah asisten AI teknis tanpa filter yang memberikan jawaban "
+        "secara langsung, terstruktur, objektif, dan mendalam dalam bahasa Indonesia."
+    )
+    messages.append({
+        "role": "system",
+        "content": custom_system_prompt if custom_system_prompt else default_system
+    })
+
+    # 2. Masukkan riwayat percakapan jika ada
+    if chat_history:
+        messages.extend(chat_history)
+
+    # 3. Tambahkan pesan terbaru dari pengguna
+    messages.append({
+        "role": "user",
+        "content": user_prompt
+    })
+
+    return messages
+
+def call_ai_endpoint(api_url, api_key, model_name, user_prompt, custom_system_prompt=None, chat_history=None):
+    clean_base = api_url[:-17] if api_url.endswith("/chat/completions") else api_url.rstrip("/")
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0"
+    }
+    if "openrouter.ai" in clean_base:
+        headers["HTTP-Referer"] = "https://github.com"
+        headers["X-Title"] = "Multi-Agent Telegram Bot"
+
+    payload = {
+        "model": model_name,
+        "messages": format_messages_payload(user_prompt, custom_system_prompt, chat_history),
+        "max_tokens": 4096,
+        "temperature": 0.7
+    }
+
+    response = requests.post(f"{clean_base}/chat/completions", json=payload, headers=headers, timeout=60, verify=False)
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"]
+
+def simpan_riwayat_chat(chat_id, user_prompt, ai_reply):
+    if chat_id not in CHAT_HISTORY:
+        CHAT_HISTORY[chat_id] = []
+    CHAT_HISTORY[chat_id].append({"role": "user", "content": user_prompt})
+    CHAT_HISTORY[chat_id].append({"role": "assistant", "content": ai_reply})
+    # Batasi maksimal 10 pesan terakhir (5 pasang tanya-jawab) agar kuota token tetap hemat
+    if len(CHAT_HISTORY[chat_id]) > 10:
+        CHAT_HISTORY[chat_id] = CHAT_HISTORY[chat_id][-10:]
 
 # Fungsi Pembersih Pesan Instruksi/Menu Sebelumnya Agar Tidak Menumpuk
 def bersihkan_instruksi_sebelumnya(chat_id, user_msg_id=None):
@@ -101,26 +161,16 @@ def catat_pesan_ui(chat_id, msg_obj):
     if msg_obj.message_id not in UI_HISTORY_MESSAGES[chat_id]:
         UI_HISTORY_MESSAGES[chat_id].append(msg_obj.message_id)
 
-# 2. Penyisir Model Otomatis (OneKey, GonkaRouter, ZenMux, 9Router, Dahl, BestLLM, OpenRouter)
+# 2. Penyisir Model Otomatis
 ZENMUX_ACTIVE_BASE = ZENMUX_CANDIDATE_BASES[0]
 
 def sisir_model_onekey():
     priorities = ["uncensored", "deepseek", "qwen", "claude", "gpt-4o", "llama-3", "coder", "hermes", "dolphin", "mythomax", "gemini"]
-    defaults = [
-        "uncensored",
-        "deepseek-r1",
-        "deepseek-v3",
-        "qwen-2.5-coder-32b-instruct",
-        "claude-3-7-sonnet",
-        "gpt-4o",
-        "llama-3.3-70b-instruct",
-        "dolphin-mixtral-8x7b"
-    ]
+    defaults = ["uncensored", "deepseek-r1", "deepseek-v3", "qwen-2.5-coder-32b-instruct", "claude-3-7-sonnet", "gpt-4o", "llama-3.3-70b-instruct"]
     found = []
     if ONEKEY_API_KEY:
         try:
-            headers = {"Authorization": f"Bearer {ONEKEY_API_KEY}", "User-Agent": "Mozilla/5.0"}
-            res = requests.get(f"{ONEKEY_BASE_URL}/models", headers=headers, timeout=10, verify=False)
+            res = requests.get(f"{ONEKEY_BASE_URL}/models", headers={"Authorization": f"Bearer {ONEKEY_API_KEY}", "User-Agent": "Mozilla/5.0"}, timeout=10, verify=False)
             if res.status_code == 200:
                 ids = [str(m.get("id")) for m in res.json().get("data", []) if m.get("id")]
                 for p in priorities:
@@ -139,20 +189,11 @@ def sisir_model_onekey():
 
 def sisir_model_gonka():
     priorities = ["uncensored", "deepseek", "qwen", "claude", "gpt-4o", "llama-3.3", "coder", "hermes", "dolphin", "gemini"]
-    defaults = [
-        "deepseek-r1",
-        "deepseek-v3",
-        "qwen-2.5-coder-32b-instruct",
-        "qwen-2.5-72b-instruct",
-        "claude-3-7-sonnet",
-        "gpt-4o",
-        "llama-3.3-70b-instruct"
-    ]
+    defaults = ["deepseek-r1", "deepseek-v3", "qwen-2.5-coder-32b-instruct", "qwen-2.5-72b-instruct", "claude-3-7-sonnet", "gpt-4o", "llama-3.3-70b-instruct"]
     found = []
     if GONKA_API_KEY:
         try:
-            headers = {"Authorization": f"Bearer {GONKA_API_KEY}", "User-Agent": "Mozilla/5.0"}
-            res = requests.get(f"{GONKA_BASE_URL}/models", headers=headers, timeout=10, verify=False)
+            res = requests.get(f"{GONKA_BASE_URL}/models", headers={"Authorization": f"Bearer {GONKA_API_KEY}", "User-Agent": "Mozilla/5.0"}, timeout=10, verify=False)
             if res.status_code == 200:
                 ids = [str(m.get("id")) for m in res.json().get("data", []) if m.get("id")]
                 for p in priorities:
@@ -179,8 +220,7 @@ def sisir_model_zenmux():
             try:
                 res = requests.get(f"{base}/models", headers=headers, timeout=10, verify=False)
                 if res.status_code == 200:
-                    data = res.json().get("data", [])
-                    ids = [str(m.get("id")) for m in data if m.get("id")]
+                    ids = [str(m.get("id")) for m in res.json().get("data", []) if m.get("id")]
                     if ids:
                         ZENMUX_ACTIVE_BASE = base
                         for p in priorities:
@@ -193,8 +233,7 @@ def sisir_model_zenmux():
                         break
             except Exception:
                 continue
-    defaults = ["tencent-hy4", "hunyuan-hy4", "deepseek-v3", "qwen-2.5-coder-32b-instruct", "claude-3-7-sonnet", "gpt-4o"]
-    for d in defaults:
+    for d in ["tencent-hy4", "hunyuan-hy4", "deepseek-v3", "qwen-2.5-coder-32b-instruct", "claude-3-7-sonnet", "gpt-4o"]:
         if d not in found:
             found.append(d)
     return found
@@ -252,7 +291,7 @@ def get_bestllm_models():
     found = []
     if BEST_API_KEY:
         try:
-            res = requests.get("https://api.bestllmapi.com/v1/models", headers={"Authorization": f"Bearer {BEST_API_KEY}"}, timeout=10, verify=False)
+            res = requests.get(f"{BEST_BASE_URL}/models", headers={"Authorization": f"Bearer {BEST_API_KEY}"}, timeout=10, verify=False)
             if res.status_code == 200:
                 ids = [str(m.get("id")) for m in res.json().get("data", []) if m.get("id")]
                 for p in ["uncensored", "dolphin", "hermes", "mythomax", "qwen", "deepseek"]:
@@ -274,7 +313,7 @@ BEST_MODELS = get_bestllm_models()
 def get_openrouter_models():
     available = []
     try:
-        res = requests.get("https://openrouter.ai/api/v1/models", timeout=10)
+        res = requests.get(f"{OPENROUTER_BASE_URL}/models", timeout=10)
         if res.status_code == 200:
             free_ids = [m["id"] for m in res.json().get("data", []) if m.get("id", "").endswith(":free")]
             for p in ["dolphin", "hermes", "mythomax", "llama-3"]:
@@ -291,7 +330,7 @@ def get_openrouter_models():
 
 OR_MODELS = get_openrouter_models() if OPENROUTER_KEY else ["openrouter/free"]
 
-# 3. Katalog Utama & Folder Sub-Kategori (Termasuk OneKeyLLMAPI)
+# 3. Katalog Utama & Folder Sub-Kategori
 KATALOG_MODEL = {
     "itera": {"provider": "itera", "model_id": "qwen/qwen3.8-27b", "nama": "Itera Qwen 3.8 27B (128K)", "tugas": "Koding, Tool Calling & Teks Panjang (IteraCompute)"},
     "vascoo": {"provider": "vascoo", "model_id": "uncensored-x", "nama": "Vascoo Uncensored-X", "tugas": "Teks & Roleplay Tanpa Sensor (Vascoo)"},
@@ -315,30 +354,15 @@ def segarkan_folder_kategori():
         del KATALOG_MODEL[k]
 
     for idx, m_id in enumerate(ONEKEY_MODELS[:12]):
-        KATALOG_MODEL[f"ok_{idx}"] = {
-            "provider": "onekey", "model_id": m_id, "nama": f"OneKey: {m_id}",
-            "tugas": "Multi-Model Gateway (OneKeyLLMAPI)"
-        }
+        KATALOG_MODEL[f"ok_{idx}"] = {"provider": "onekey", "model_id": m_id, "nama": f"OneKey: {m_id}", "tugas": "Multi-Model Gateway (OneKeyLLMAPI)"}
     for idx, m_id in enumerate(GONKA_MODELS[:12]):
-        KATALOG_MODEL[f"gonka_{idx}"] = {
-            "provider": "gonka", "model_id": m_id, "nama": f"Gonka: {m_id}",
-            "tugas": "High-Frequency Neural Gateway (GonkaRouter)"
-        }
+        KATALOG_MODEL[f"gonka_{idx}"] = {"provider": "gonka", "model_id": m_id, "nama": f"Gonka: {m_id}", "tugas": "High-Frequency Neural Gateway (GonkaRouter)"}
     for idx, m_id in enumerate(ZENMUX_MODELS[:12]):
-        KATALOG_MODEL[f"zm_{idx}"] = {
-            "provider": "zenmux", "model_id": m_id, "nama": f"ZenMux: {m_id}",
-            "tugas": "Agen Pengkodean & Multi-Tugas" if "hy4" in m_id.lower() or "coder" in m_id.lower() else "Model AI ZenMux"
-        }
+        KATALOG_MODEL[f"zm_{idx}"] = {"provider": "zenmux", "model_id": m_id, "nama": f"ZenMux: {m_id}", "tugas": "Agen Pengkodean & Multi-Tugas"}
     for idx, m_id in enumerate(TER_MODELS[:12]):
-        KATALOG_MODEL[f"ter_{idx}"] = {
-            "provider": "ter", "model_id": m_id, "nama": f"9Router: {m_id}",
-            "tugas": "Roleplay & Jailbreak" if "jb" in m_id.lower() or "mommy" in m_id.lower() or "kratos" in m_id.lower() else "Model GLM 9Router"
-        }
+        KATALOG_MODEL[f"ter_{idx}"] = {"provider": "ter", "model_id": m_id, "nama": f"9Router: {m_id}", "tugas": "Model GLM 9Router"}
     for idx, m_id in enumerate(DAHL_MODELS[:12]):
-        KATALOG_MODEL[f"dahl_{idx}"] = {
-            "provider": "dahl", "model_id": m_id, "nama": f"Dahl: {m_id}",
-            "tugas": "Open Models (Dahl Inference)"
-        }
+        KATALOG_MODEL[f"dahl_{idx}"] = {"provider": "dahl", "model_id": m_id, "nama": f"Dahl: {m_id}", "tugas": "Open Models (Dahl Inference)"}
 
 segarkan_folder_kategori()
 
@@ -373,19 +397,19 @@ def uji_satu_model_cepat(kode_model):
         return True, "Layanan Visual Aktif (Gratis / Tanpa Kuota)."
 
     peta_kunci = {
-        "onekey": (ONEKEY_API_KEY, "ONEKEY_API_KEY", f"{ONEKEY_BASE_URL}/chat/completions"),
-        "gonka": (GONKA_API_KEY, "GONKA_API_KEY", f"{GONKA_BASE_URL}/chat/completions"),
-        "itera": (ITERA_API_KEY, "ITERA_API_KEY", ITERA_CHAT_URL),
-        "vascoo": (VASCOO_API_KEY, "VASCOO_API_KEY", VASCOO_CHAT_URL),
-        "dahl": (DAHL_API_KEY, "DAHL_API_KEY", f"{DAHL_BASE_URL}/chat/completions"),
-        "ter": (TER_API_KEY, "TER_API_KEY", f"{TER_BASE_URL}/chat/completions"),
-        "zenmux": (ZENMUX_API_KEY, "ZENMUX_API_KEY", f"{ZENMUX_ACTIVE_BASE}/chat/completions"),
-        "indo": (INDO_API_KEY, "INDO_API_KEY", INDO_CHAT_URL),
-        "openai": (OPENAI_API_KEY, "OPENAI_API_KEY", OPENAI_URL),
-        "bestllm": (BEST_API_KEY, "BEST_API_KEY", BEST_CHAT_URL),
-        "bejo": (BEJO_API_KEY, "BEJO_API_KEY", BEJO_URL),
-        "nocta": (NOCTA_API_KEY, "NOCTA_API_KEY", NOCTA_URL),
-        "openrouter": (OPENROUTER_KEY, "API_KEY (OpenRouter)", OPENROUTER_URL)
+        "onekey": (ONEKEY_API_KEY, "ONEKEY_API_KEY", ONEKEY_BASE_URL),
+        "gonka": (GONKA_API_KEY, "GONKA_API_KEY", GONKA_BASE_URL),
+        "itera": (ITERA_API_KEY, "ITERA_API_KEY", ITERA_BASE_URL),
+        "vascoo": (VASCOO_API_KEY, "VASCOO_API_KEY", VASCOO_BASE_URL),
+        "dahl": (DAHL_API_KEY, "DAHL_API_KEY", DAHL_BASE_URL),
+        "ter": (TER_API_KEY, "TER_API_KEY", TER_BASE_URL),
+        "zenmux": (ZENMUX_API_KEY, "ZENMUX_API_KEY", ZENMUX_ACTIVE_BASE),
+        "indo": (INDO_API_KEY, "INDO_API_KEY", INDO_BASE_URL),
+        "openai": (OPENAI_API_KEY, "OPENAI_API_KEY", OPENAI_BASE_URL),
+        "bestllm": (BEST_API_KEY, "BEST_API_KEY", BEST_BASE_URL),
+        "bejo": (BEJO_API_KEY, "BEJO_API_KEY", BEJO_BASE_URL),
+        "nocta": (NOCTA_API_KEY, "NOCTA_API_KEY", NOCTA_BASE_URL),
+        "openrouter": (OPENROUTER_KEY, "API_KEY (OpenRouter)", OPENROUTER_BASE_URL)
     }
 
     if provider == "gemini":
@@ -407,29 +431,20 @@ def uji_satu_model_cepat(kode_model):
             return False, f"Gangguan Gemini: {str(e)[:80]}"
 
     if provider in peta_kunci:
-        kunci, nama_env, url_target = peta_kunci[provider]
+        kunci, nama_env, base_url = peta_kunci[provider]
         if not kunci:
             return False, f"API Key Kosong ({nama_env} belum dipasang di GitHub Secrets)."
 
-        headers = {
-            "Authorization": f"Bearer {kunci}",
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0"
-        }
-        payload = {
-            "model": model_id,
-            "messages": [{"role": "user", "content": "hi"}],
-            "max_tokens": 5
-        }
+        headers = {"Authorization": f"Bearer {kunci}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+        payload = {"model": model_id, "messages": format_messages_payload("hi"), "max_tokens": 5}
         try:
-            res = requests.post(url_target, headers=headers, json=payload, timeout=15, verify=False)
+            res = requests.post(f"{base_url}/chat/completions", headers=headers, json=payload, timeout=15, verify=False)
             if res.status_code == 200:
                 data = res.json()
                 if "choices" in data and len(data["choices"]) > 0:
                     return True, "Model Aktif & Merespons Normal (200 OK)."
                 if "error" in data:
-                    pesan_err = str(data["error"])
-                    return False, analisis_penyebab_http(400, pesan_err)
+                    return False, analisis_penyebab_http(400, str(data["error"]))
                 return True, "Server Terhubung (200 OK)."
             else:
                 return False, analisis_penyebab_http(res.status_code, res.text)
@@ -479,21 +494,11 @@ def buat_menu_utama(mode_aktif):
     ikon_ter, akt_ter, tot_ter = ambil_status_kategori("ter_")
     ikon_dahl, akt_dahl, tot_dahl = ambil_status_kategori("dahl_")
 
-    markup.row(InlineKeyboardButton(
-        f"{ikon_ok}📂 ONEKEY LLM ({akt_ok}/{tot_ok} Aktif)", callback_data="cat_onekey"
-    ))
-    markup.row(InlineKeyboardButton(
-        f"{ikon_gk}📂 GONKAROUTER ({akt_gk}/{tot_gk} Aktif)", callback_data="cat_gonka"
-    ))
-    markup.row(InlineKeyboardButton(
-        f"{ikon_zm}📂 ZENMUX ({akt_zm}/{tot_zm} Aktif)", callback_data="cat_zenmux"
-    ))
-    markup.row(InlineKeyboardButton(
-        f"{ikon_ter}📂 9ROUTER GLM ({akt_ter}/{tot_ter} Aktif)", callback_data="cat_ter"
-    ))
-    markup.row(InlineKeyboardButton(
-        f"{ikon_dahl}📂 DAHL INFERENCE ({akt_dahl}/{tot_dahl} Aktif)", callback_data="cat_dahl"
-    ))
+    markup.row(InlineKeyboardButton(f"{ikon_ok}📂 ONEKEY LLM ({akt_ok}/{tot_ok} Aktif)", callback_data="cat_onekey"))
+    markup.row(InlineKeyboardButton(f"{ikon_gk}📂 GONKAROUTER ({akt_gk}/{tot_gk} Aktif)", callback_data="cat_gonka"))
+    markup.row(InlineKeyboardButton(f"{ikon_zm}📂 ZENMUX ({akt_zm}/{tot_zm} Aktif)", callback_data="cat_zenmux"))
+    markup.row(InlineKeyboardButton(f"{ikon_ter}📂 9ROUTER GLM ({akt_ter}/{tot_ter} Aktif)", callback_data="cat_ter"))
+    markup.row(InlineKeyboardButton(f"{ikon_dahl}📂 DAHL INFERENCE ({akt_dahl}/{tot_dahl} Aktif)", callback_data="cat_dahl"))
 
     tombol_list = []
     for kode, info in KATALOG_MODEL.items():
@@ -555,8 +560,8 @@ def kunci_model_pilihan(chat_id, kode_pilihan):
         f"✅ Sekarang HANYA model ini yang melayani semua pesanmu."
     )
 
-# 6. Eksekutor Pesan Pengguna
-def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None):
+# 6. Eksekutor Pesan Pengguna (Menggunakan call_ai_endpoint & format_messages_payload)
+def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None, chat_id=None):
     info = KATALOG_MODEL.get(kode_model)
     if not info:
         return False, "Model tidak ditemukan di katalog.", "Unknown"
@@ -564,61 +569,59 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None):
     provider = info["provider"]
     model_id = info["model_id"]
     nama_tampil = info["nama"]
-    sistem_prompt = instruksi_khusus or "Kamu adalah AI spesialis tanpa sensor. Kerjakan instruksi pengguna secara langsung, objektif, dan tuntas menggunakan bahasa Indonesia."
-    headers_umum = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+    riwayat_user = CHAT_HISTORY.get(chat_id, []) if chat_id else None
 
     try:
         if provider in ["onekey", "gonka", "itera", "vascoo", "dahl", "ter", "indo", "openai", "bestllm", "bejo", "nocta"]:
-            peta_url = {
-                "onekey": (f"{ONEKEY_BASE_URL}/chat/completions", ONEKEY_API_KEY),
-                "gonka": (f"{GONKA_BASE_URL}/chat/completions", GONKA_API_KEY),
-                "itera": (ITERA_CHAT_URL, ITERA_API_KEY),
-                "vascoo": (VASCOO_CHAT_URL, VASCOO_API_KEY),
-                "dahl": (f"{DAHL_BASE_URL}/chat/completions", DAHL_API_KEY),
-                "ter": (f"{TER_BASE_URL}/chat/completions", TER_API_KEY),
-                "indo": (INDO_CHAT_URL, INDO_API_KEY),
-                "openai": (OPENAI_URL, OPENAI_API_KEY),
-                "bestllm": (BEST_CHAT_URL, BEST_API_KEY),
-                "bejo": (BEJO_URL, BEJO_API_KEY),
-                "nocta": (NOCTA_URL, NOCTA_API_KEY)
+            peta_base = {
+                "onekey": (ONEKEY_BASE_URL, ONEKEY_API_KEY),
+                "gonka": (GONKA_BASE_URL, GONKA_API_KEY),
+                "itera": (ITERA_BASE_URL, ITERA_API_KEY),
+                "vascoo": (VASCOO_BASE_URL, VASCOO_API_KEY),
+                "dahl": (DAHL_BASE_URL, DAHL_API_KEY),
+                "ter": (TER_BASE_URL, TER_API_KEY),
+                "indo": (INDO_BASE_URL, INDO_API_KEY),
+                "openai": (OPENAI_BASE_URL, OPENAI_API_KEY),
+                "bestllm": (BEST_BASE_URL, BEST_API_KEY),
+                "bejo": (BEJO_BASE_URL, BEJO_API_KEY),
+                "nocta": (NOCTA_BASE_URL, NOCTA_API_KEY)
             }
-            url, key = peta_url[provider]
+            base_url, key = peta_base[provider]
             if not key:
                 MODEL_HEALTH_CACHE[kode_model] = {"active": False, "reason": f"API Key {provider.upper()} belum dipasang di Secrets."}
                 return False, MODEL_HEALTH_CACHE[kode_model]["reason"], nama_tampil
 
-            headers = {**headers_umum, "Authorization": f"Bearer {key}"}
-            payload = {"model": model_id, "messages": [{"role": "system", "content": sistem_prompt}, {"role": "user", "content": user_text}], "temperature": 0.7}
-            res = requests.post(url, headers=headers, json=payload, timeout=50, verify=False)
-            if res.status_code == 200:
-                isi = res.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            try:
+                isi = call_ai_endpoint(base_url, key, model_id, user_text, instruksi_khusus, riwayat_user)
                 if isi and isi.strip():
                     MODEL_HEALTH_CACHE[kode_model] = {"active": True, "reason": "Aktif (200 OK)"}
+                    if chat_id:
+                        simpan_riwayat_chat(chat_id, user_text, isi.strip())
                     return True, isi.strip(), nama_tampil
-            alasan_gagal = analisis_penyebab_http(res.status_code, res.text)
-            MODEL_HEALTH_CACHE[kode_model] = {"active": False, "reason": alasan_gagal}
-            return False, alasan_gagal, nama_tampil
+                return False, "Respons kosong dari server.", nama_tampil
+            except requests.exceptions.HTTPError as he:
+                alasan_gagal = analisis_penyebab_http(he.response.status_code, he.response.text)
+                MODEL_HEALTH_CACHE[kode_model] = {"active": False, "reason": alasan_gagal}
+                return False, alasan_gagal, nama_tampil
 
         elif provider == "zenmux":
             if not ZENMUX_API_KEY:
                 MODEL_HEALTH_CACHE[kode_model] = {"active": False, "reason": "ZENMUX_API_KEY belum dipasang di Secrets."}
                 return False, MODEL_HEALTH_CACHE[kode_model]["reason"], nama_tampil
-            headers = {**headers_umum, "Authorization": f"Bearer {ZENMUX_API_KEY}"}
             bases_to_try = [ZENMUX_ACTIVE_BASE] + [b for b in ZENMUX_CANDIDATE_BASES if b != ZENMUX_ACTIVE_BASE]
             last_err = ""
             for base in bases_to_try:
-                payload = {"model": model_id, "messages": [{"role": "system", "content": sistem_prompt}, {"role": "user", "content": user_text}], "temperature": 0.7}
                 try:
-                    res = requests.post(f"{base}/chat/completions", headers=headers, json=payload, timeout=50, verify=False)
-                    if res.status_code == 200:
-                        isi = res.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-                        if isi and isi.strip():
-                            MODEL_HEALTH_CACHE[kode_model] = {"active": True, "reason": "Aktif (200 OK)"}
-                            return True, isi.strip(), f"ZenMux ({model_id})"
-                    else:
-                        last_err = analisis_penyebab_http(res.status_code, res.text)
-                        if res.status_code in [401, 403]:
-                            break
+                    isi = call_ai_endpoint(base, ZENMUX_API_KEY, model_id, user_text, instruksi_khusus, riwayat_user)
+                    if isi and isi.strip():
+                        MODEL_HEALTH_CACHE[kode_model] = {"active": True, "reason": "Aktif (200 OK)"}
+                        if chat_id:
+                            simpan_riwayat_chat(chat_id, user_text, isi.strip())
+                        return True, isi.strip(), f"ZenMux ({model_id})"
+                except requests.exceptions.HTTPError as he:
+                    last_err = analisis_penyebab_http(he.response.status_code, he.response.text)
+                    if he.response.status_code in [401, 403]:
+                        break
                 except Exception as ex:
                     last_err = f"Server Down / Timeout: {str(ex)[:50]}"
             MODEL_HEALTH_CACHE[kode_model] = {"active": False, "reason": last_err}
@@ -628,9 +631,13 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None):
             if not gemini_client:
                 MODEL_HEALTH_CACHE[kode_model] = {"active": False, "reason": "GEMINI_API_KEY belum dipasang di Secrets."}
                 return False, MODEL_HEALTH_CACHE[kode_model]["reason"], nama_tampil
-            resp = gemini_client.models.generate_content(model=model_id, contents=f"{sistem_prompt}\n\nPermintaan: {user_text}")
+            payload_msgs = format_messages_payload(user_text, instruksi_khusus, riwayat_user)
+            gabungan_teks = "\n\n".join([f"[{m['role'].upper()}]: {m['content']}" for m in payload_msgs])
+            resp = gemini_client.models.generate_content(model=model_id, contents=gabungan_teks)
             if resp and resp.text:
                 MODEL_HEALTH_CACHE[kode_model] = {"active": True, "reason": "Aktif"}
+                if chat_id:
+                    simpan_riwayat_chat(chat_id, user_text, resp.text.strip())
                 return True, resp.text.strip(), nama_tampil
             return False, "Respons Gemini kosong.", nama_tampil
 
@@ -638,14 +645,16 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None):
             if not OPENROUTER_KEY:
                 MODEL_HEALTH_CACHE[kode_model] = {"active": False, "reason": "API_KEY OpenRouter belum dipasang."}
                 return False, MODEL_HEALTH_CACHE[kode_model]["reason"], nama_tampil
-            headers = {**headers_umum, "Authorization": f"Bearer {OPENROUTER_KEY}", "HTTP-Referer": "https://github.com"}
             for or_m in OR_MODELS[:3]:
-                res = requests.post(OPENROUTER_URL, headers=headers, json={"model": or_m, "messages": [{"role": "system", "content": sistem_prompt}, {"role": "user", "content": user_text}]}, timeout=45, verify=False)
-                if res.status_code == 200:
-                    isi = res.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+                try:
+                    isi = call_ai_endpoint(OPENROUTER_BASE_URL, OPENROUTER_KEY, or_m, user_text, instruksi_khusus, riwayat_user)
                     if isi and isi.strip():
                         MODEL_HEALTH_CACHE[kode_model] = {"active": True, "reason": "Aktif"}
-                        return True, isi.strip(), f"OpenRouter ({res.json().get('model', or_m)})"
+                        if chat_id:
+                            simpan_riwayat_chat(chat_id, user_text, isi.strip())
+                        return True, isi.strip(), f"OpenRouter ({or_m})"
+                except Exception:
+                    continue
             alasan = "Semua jalur gratis OpenRouter sedang penuh / rate-limit."
             MODEL_HEALTH_CACHE[kode_model] = {"active": False, "reason": alasan}
             return False, alasan, nama_tampil
@@ -684,7 +693,7 @@ def kerjakan_video(message, teks_user):
     antrean_video = ["ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "zm_0", "indo", "chatgpt", "qwen", "recursive"]
     for k in antrean_video:
         if k in KATALOG_MODEL:
-            ok, hasil, label = eksekusi_tunggal(k, teks_user, instruksi_video)
+            ok, hasil, label = eksekusi_tunggal(k, teks_user, instruksi_video, message.chat.id)
             if ok:
                 teks_skenario, penulis = hasil, label
                 break
@@ -754,7 +763,15 @@ def teks_submenu_folder_str(nama_kategori, mode_sekarang, awalan):
         f"👇 Klik 🟢 untuk mengunci, atau klik 🔴 untuk detail penyebab mati:"
     )
 
-# 8. Perintah /model, /cek, dan /kuota (Otomatis Menghapus Instruksi Sebelumnya)
+# 8. Perintah /model, /cek, /reset, dan /kuota
+@bot.message_handler(commands=['reset', 'clear'])
+def handle_reset_history(message):
+    chat_id = message.chat.id
+    CHAT_HISTORY[chat_id] = []
+    bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
+    msg = bot.send_message(chat_id, "🧹 Riwayat percakapan (chat_history) telah dibersihkan! Memori konteks dimulai dari awal.")
+    catat_pesan_ui(chat_id, msg)
+
 @bot.message_handler(commands=['model', 'cek'])
 def handle_command_model(message):
     chat_id, cmd_text = message.chat.id, message.text.strip()
@@ -858,7 +875,7 @@ def handle_cek_kuota(message):
 
     bot.edit_message_text(laporan[:4000], chat_id=chat_id, message_id=msg.message_id)
 
-# 9. Handler Klik Tombol (Mengganti Tampilan di Kotak yang Sama Tanpa Menumpuk Pesan)
+# 9. Handler Klik Tombol
 @bot.callback_query_handler(func=lambda call: True)
 def handle_semua_tombol(call):
     global ONEKEY_MODELS, GONKA_MODELS, ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
@@ -1031,12 +1048,11 @@ def handle_start(message):
     ket_mode = "OTOMATIS" if mode == "auto" else f"TERKUNCI PADA [{KATALOG_MODEL.get(mode, {}).get('nama', mode)}]"
     msg = bot.send_message(
         chat_id,
-        f"🤖 Bot Multi-Model dengan Pemantau Status (🟢/🔴) Siap!\n"
+        f"🤖 Bot Multi-Model dengan Memori Konteks & Status (🟢/🔴) Siap!\n"
         f"🔒 Mode Aktif: {ket_mode}\n\n"
         f"📌 Perintah Utama:\n"
         f"• /model — Cek status 🟢 Aktif / 🔴 Mati semua model & buka Folder Kategori.\n"
-        f"• /model onekey — Langsung membuka folder model OneKeyLLMAPI.\n"
-        f"• /model gonka — Langsung membuka folder model GonkaRouter.\n"
+        f"• /reset — Menghapus memori riwayat percakapan (chat_history).\n"
         f"• /kuota — Lihat laporan kesehatan tiap server & penyebab error."
     )
     catat_pesan_ui(chat_id, msg)
@@ -1094,7 +1110,7 @@ def handle_pesan_utama(message):
             return
         else:
             bot.send_chat_action(chat_id, 'typing')
-            ok, hasil, nama_pekerja = eksekusi_tunggal(mode_terkunci, teks)
+            ok, hasil, nama_pekerja = eksekusi_tunggal(mode_terkunci, teks, chat_id=chat_id)
             if ok:
                 kirim_pesan_rapi(message, hasil, nama_pekerja, f"Terkunci ({KATALOG_MODEL[mode_terkunci]['model_id']})")
             else:
@@ -1126,7 +1142,7 @@ def handle_pesan_utama(message):
 
     for kode in antrean:
         if kode in KATALOG_MODEL:
-            ok, hasil, nama_pekerja = eksekusi_tunggal(kode, teks)
+            ok, hasil, nama_pekerja = eksekusi_tunggal(kode, teks, chat_id=chat_id)
             if ok:
                 kirim_pesan_rapi(message, hasil, nama_pekerja, label_tugas)
                 return
