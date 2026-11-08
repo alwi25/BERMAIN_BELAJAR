@@ -16,6 +16,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 1. Kredensial Murni dari GitHub Secrets
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 PROXY_URL = os.environ.get("PROXY_URL", "").strip()
+BOTKEEP_API_KEY = os.environ.get("BOTKEEP_API_KEY", "").strip()
 ONEKEY_API_KEY = os.environ.get("ONEKEY_API_KEY", "").strip()
 GONKA_API_KEY = os.environ.get("GONKA_API_KEY", "").strip()
 ITERA_API_KEY = os.environ.get("ITERA_API_KEY", "").strip()
@@ -35,6 +36,7 @@ if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN kosong! Harap isi di GitHub Secrets.")
 
 # Daftar Base URL Server (Format Standar untuk call_ai_endpoint)
+BOTKEEP_BASE_URL = "http://node18.botkeep.cloud:61172/v1"
 ONEKEY_BASE_URL = "https://api.onekeyllmapi.com/v1"
 GONKA_BASE_URL = "https://api.gonkarouter.io/v1"
 ITERA_BASE_URL = "https://api.iteracompute.com/v1"
@@ -133,7 +135,6 @@ def simpan_riwayat_chat(chat_id, user_prompt, ai_reply):
         CHAT_HISTORY[chat_id] = []
     CHAT_HISTORY[chat_id].append({"role": "user", "content": user_prompt})
     CHAT_HISTORY[chat_id].append({"role": "assistant", "content": ai_reply})
-    # Batasi maksimal 10 pesan terakhir (5 pasang tanya-jawab) agar kuota token tetap hemat
     if len(CHAT_HISTORY[chat_id]) > 10:
         CHAT_HISTORY[chat_id] = CHAT_HISTORY[chat_id][-10:]
 
@@ -161,8 +162,50 @@ def catat_pesan_ui(chat_id, msg_obj):
     if msg_obj.message_id not in UI_HISTORY_MESSAGES[chat_id]:
         UI_HISTORY_MESSAGES[chat_id].append(msg_obj.message_id)
 
-# 2. Penyisir Model Otomatis
+# 2. Penyisir Model Otomatis (BotKeep Node18, OneKey, GonkaRouter, ZenMux, 9Router, Dahl, BestLLM, OpenRouter)
 ZENMUX_ACTIVE_BASE = ZENMUX_CANDIDATE_BASES[0]
+
+def sisir_model_botkeep():
+    priorities = ["uncensored", "deepseek", "qwen", "claude", "gpt", "glm", "llama", "coder", "hermes", "dolphin", "gemini"]
+    defaults = [
+        "deepseek-r1",
+        "deepseek-v3",
+        "qwen-2.5-coder-32b",
+        "qwen-2.5-72b-instruct",
+        "claude-3-7-sonnet",
+        "gpt-4o",
+        "gpt-4o-mini",
+        "llama-3.3-70b-instruct"
+    ]
+    found = []
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        if BOTKEEP_API_KEY:
+            headers["Authorization"] = f"Bearer {BOTKEEP_API_KEY}"
+        res = requests.get(f"{BOTKEEP_BASE_URL}/models", headers=headers, timeout=10, verify=False)
+        if res.status_code == 200:
+            data_json = res.json()
+            raw_list = data_json.get("data", data_json) if isinstance(data_json, dict) else data_json
+            ids = []
+            if isinstance(raw_list, list):
+                for m in raw_list:
+                    if isinstance(m, dict) and m.get("id"):
+                        ids.append(str(m.get("id")))
+                    elif isinstance(m, str):
+                        ids.append(m)
+            for p in priorities:
+                for mid in ids:
+                    if p in mid.lower() and mid not in found:
+                        found.append(mid)
+            for mid in ids:
+                if mid not in found:
+                    found.append(mid)
+    except Exception:
+        pass
+    for d in defaults:
+        if d not in found:
+            found.append(d)
+    return found
 
 def sisir_model_onekey():
     priorities = ["uncensored", "deepseek", "qwen", "claude", "gpt-4o", "llama-3", "coder", "hermes", "dolphin", "mythomax", "gemini"]
@@ -281,6 +324,7 @@ def sisir_model_dahl():
             found.append(d)
     return found
 
+BOTKEEP_MODELS = sisir_model_botkeep()
 ONEKEY_MODELS = sisir_model_onekey()
 GONKA_MODELS = sisir_model_gonka()
 ZENMUX_MODELS = sisir_model_zenmux()
@@ -330,7 +374,7 @@ def get_openrouter_models():
 
 OR_MODELS = get_openrouter_models() if OPENROUTER_KEY else ["openrouter/free"]
 
-# 3. Katalog Utama & Folder Sub-Kategori
+# 3. Katalog Utama & Folder Sub-Kategori (Termasuk BotKeep Node18)
 KATALOG_MODEL = {
     "itera": {"provider": "itera", "model_id": "qwen/qwen3.8-27b", "nama": "Itera Qwen 3.8 27B (128K)", "tugas": "Koding, Tool Calling & Teks Panjang (IteraCompute)"},
     "vascoo": {"provider": "vascoo", "model_id": "uncensored-x", "nama": "Vascoo Uncensored-X", "tugas": "Teks & Roleplay Tanpa Sensor (Vascoo)"},
@@ -349,10 +393,12 @@ KATALOG_MODEL = {
 }
 
 def segarkan_folder_kategori():
-    kunci_lama = [k for k in list(KATALOG_MODEL.keys()) if k.startswith(("ok_", "gonka_", "zm_", "ter_", "dahl_"))]
+    kunci_lama = [k for k in list(KATALOG_MODEL.keys()) if k.startswith(("bk_", "ok_", "gonka_", "zm_", "ter_", "dahl_"))]
     for k in kunci_lama:
         del KATALOG_MODEL[k]
 
+    for idx, m_id in enumerate(BOTKEEP_MODELS[:12]):
+        KATALOG_MODEL[f"bk_{idx}"] = {"provider": "botkeep", "model_id": m_id, "nama": f"BotKeep: {m_id}", "tugas": "Node18 BotKeep Cloud AI"}
     for idx, m_id in enumerate(ONEKEY_MODELS[:12]):
         KATALOG_MODEL[f"ok_{idx}"] = {"provider": "onekey", "model_id": m_id, "nama": f"OneKey: {m_id}", "tugas": "Multi-Model Gateway (OneKeyLLMAPI)"}
     for idx, m_id in enumerate(GONKA_MODELS[:12]):
@@ -397,6 +443,7 @@ def uji_satu_model_cepat(kode_model):
         return True, "Layanan Visual Aktif (Gratis / Tanpa Kuota)."
 
     peta_kunci = {
+        "botkeep": (BOTKEEP_API_KEY, "BOTKEEP_API_KEY", BOTKEEP_BASE_URL),
         "onekey": (ONEKEY_API_KEY, "ONEKEY_API_KEY", ONEKEY_BASE_URL),
         "gonka": (GONKA_API_KEY, "GONKA_API_KEY", GONKA_BASE_URL),
         "itera": (ITERA_API_KEY, "ITERA_API_KEY", ITERA_BASE_URL),
@@ -451,7 +498,7 @@ def uji_satu_model_cepat(kode_model):
         except requests.exceptions.Timeout:
             return False, "Server Down / Antrean Penuh (Timeout > 15 detik)."
         except requests.exceptions.ConnectionError:
-            return False, "Server Down / Domain Tidak Dapat Dihubungi (Connection Error)."
+            return False, "Server Down / Port atau Domain Tidak Dapat Dihubungi (Connection Error)."
         except Exception as e:
             return False, f"Kesalahan Jaringan: {str(e)[:70]}"
 
@@ -488,12 +535,14 @@ def ambil_status_kategori(awalan):
 def buat_menu_utama(mode_aktif):
     markup = InlineKeyboardMarkup(row_width=2)
 
+    ikon_bk, akt_bk, tot_bk = ambil_status_kategori("bk_")
     ikon_ok, akt_ok, tot_ok = ambil_status_kategori("ok_")
     ikon_gk, akt_gk, tot_gk = ambil_status_kategori("gonka_")
     ikon_zm, akt_zm, tot_zm = ambil_status_kategori("zm_")
     ikon_ter, akt_ter, tot_ter = ambil_status_kategori("ter_")
     ikon_dahl, akt_dahl, tot_dahl = ambil_status_kategori("dahl_")
 
+    markup.row(InlineKeyboardButton(f"{ikon_bk}📂 BOTKEEP NODE18 ({akt_bk}/{tot_bk} Aktif)", callback_data="cat_botkeep"))
     markup.row(InlineKeyboardButton(f"{ikon_ok}📂 ONEKEY LLM ({akt_ok}/{tot_ok} Aktif)", callback_data="cat_onekey"))
     markup.row(InlineKeyboardButton(f"{ikon_gk}📂 GONKAROUTER ({akt_gk}/{tot_gk} Aktif)", callback_data="cat_gonka"))
     markup.row(InlineKeyboardButton(f"{ikon_zm}📂 ZENMUX ({akt_zm}/{tot_zm} Aktif)", callback_data="cat_zenmux"))
@@ -502,7 +551,7 @@ def buat_menu_utama(mode_aktif):
 
     tombol_list = []
     for kode, info in KATALOG_MODEL.items():
-        if kode.startswith(("ok_", "gonka_", "zm_", "ter_", "dahl_")):
+        if kode.startswith(("bk_", "ok_", "gonka_", "zm_", "ter_", "dahl_")):
             continue
         ikon = ambil_ikon_status(kode, mode_aktif)
         tombol_list.append(InlineKeyboardButton(f"{ikon} {kode.upper()} ({info['nama'][:10]})", callback_data=f"lock_{kode}"))
@@ -526,7 +575,9 @@ def buat_submenu_folder(mode_aktif, awalan, callback_refresh):
 
 def buat_tombol_kembali_menu(kode_model):
     markup = InlineKeyboardMarkup()
-    if kode_model.startswith("ok_"):
+    if kode_model.startswith("bk_"):
+        markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder BotKeep Node18", callback_data="cat_botkeep"))
+    elif kode_model.startswith("ok_"):
         markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder OneKey LLM", callback_data="cat_onekey"))
     elif kode_model.startswith("gonka_"):
         markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder GonkaRouter", callback_data="cat_gonka"))
@@ -572,8 +623,9 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None, chat_id=None)
     riwayat_user = CHAT_HISTORY.get(chat_id, []) if chat_id else None
 
     try:
-        if provider in ["onekey", "gonka", "itera", "vascoo", "dahl", "ter", "indo", "openai", "bestllm", "bejo", "nocta"]:
+        if provider in ["botkeep", "onekey", "gonka", "itera", "vascoo", "dahl", "ter", "indo", "openai", "bestllm", "bejo", "nocta"]:
             peta_base = {
+                "botkeep": (BOTKEEP_BASE_URL, BOTKEEP_API_KEY),
                 "onekey": (ONEKEY_BASE_URL, ONEKEY_API_KEY),
                 "gonka": (GONKA_BASE_URL, GONKA_API_KEY),
                 "itera": (ITERA_BASE_URL, ITERA_API_KEY),
@@ -690,7 +742,7 @@ def kerjakan_video(message, teks_user):
     instruksi_video = "Kamu AI Video Director. Buatlah: 1. Skenario Visual detik demi detik, 2. Prompt Teknis Bahasa Inggris untuk engine video AI."
     teks_skenario, penulis = "", "Video Director"
 
-    antrean_video = ["ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "zm_0", "indo", "chatgpt", "qwen", "recursive"]
+    antrean_video = ["bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "zm_0", "indo", "chatgpt", "qwen", "recursive"]
     for k in antrean_video:
         if k in KATALOG_MODEL:
             ok, hasil, label = eksekusi_tunggal(k, teks_user, instruksi_video, message.chat.id)
@@ -797,6 +849,18 @@ def handle_command_model(message):
             catat_pesan_ui(chat_id, msg_baru)
         return
 
+    if arg in ["botkeep", "bk", "node18"]:
+        msg_wait = bot.send_message(chat_id, "🔍 Memeriksa kesehatan model di dalam BotKeep Node18...")
+        catat_pesan_ui(chat_id, msg_wait)
+        periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("bk_")])
+        bot.edit_message_text(
+            teks_submenu_folder_str("BOTKEEP NODE18", mode_sekarang, "bk_"),
+            chat_id=chat_id,
+            message_id=msg_wait.message_id,
+            reply_markup=buat_submenu_folder(mode_sekarang, "bk_", "refresh_botkeep")
+        )
+        return
+
     if arg in ["onekey", "ok"]:
         msg_wait = bot.send_message(chat_id, "🔍 Memeriksa kesehatan model di dalam OneKeyLLMAPI...")
         catat_pesan_ui(chat_id, msg_wait)
@@ -865,7 +929,7 @@ def handle_cek_kuota(message):
     periksa_kesehatan_serentak()
 
     laporan = "📊 LAPORAN KESEHATAN SERVER & KUOTA API\n─────────────────────────\n"
-    daftar_utama = ["ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "indo", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
+    daftar_utama = ["bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "indo", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
     for k in daftar_utama:
         if k in KATALOG_MODEL:
             sehat = MODEL_HEALTH_CACHE.get(k, {})
@@ -878,7 +942,7 @@ def handle_cek_kuota(message):
 # 9. Handler Klik Tombol
 @bot.callback_query_handler(func=lambda call: True)
 def handle_semua_tombol(call):
-    global ONEKEY_MODELS, GONKA_MODELS, ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
+    global BOTKEEP_MODELS, ONEKEY_MODELS, GONKA_MODELS, ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
     chat_id, data = call.message.chat.id, call.data
     msg_id = call.message.message_id
     mode_sekarang = USER_LOCKED_MODEL.get(chat_id, "auto")
@@ -901,6 +965,13 @@ def handle_semua_tombol(call):
                 chat_id=chat_id,
                 message_id=msg_id,
                 reply_markup=buat_menu_utama(mode_sekarang)
+            )
+        elif data == "cat_botkeep":
+            bot.edit_message_text(
+                teks_submenu_folder_str("BOTKEEP NODE18", mode_sekarang, "bk_"),
+                chat_id=chat_id,
+                message_id=msg_id,
+                reply_markup=buat_submenu_folder(mode_sekarang, "bk_", "refresh_botkeep")
             )
         elif data == "cat_onekey":
             bot.edit_message_text(
@@ -936,6 +1007,17 @@ def handle_semua_tombol(call):
                 chat_id=chat_id,
                 message_id=msg_id,
                 reply_markup=buat_submenu_folder(mode_sekarang, "dahl_", "refresh_dahl")
+            )
+        elif data == "refresh_botkeep":
+            bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder BotKeep Node18...")
+            BOTKEEP_MODELS = sisir_model_botkeep()
+            segarkan_folder_kategori()
+            periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("bk_")])
+            bot.edit_message_text(
+                teks_submenu_folder_str("BOTKEEP NODE18", mode_sekarang, "bk_"),
+                chat_id=chat_id,
+                message_id=msg_id,
+                reply_markup=buat_submenu_folder(mode_sekarang, "bk_", "refresh_botkeep")
             )
         elif data == "refresh_onekey":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder OneKey LLM...")
@@ -1052,6 +1134,7 @@ def handle_start(message):
         f"🔒 Mode Aktif: {ket_mode}\n\n"
         f"📌 Perintah Utama:\n"
         f"• /model — Cek status 🟢 Aktif / 🔴 Mati semua model & buka Folder Kategori.\n"
+        f"• /model botkeep — Langsung membuka folder model BotKeep Node18.\n"
         f"• /reset — Menghapus memori riwayat percakapan (chat_history).\n"
         f"• /kuota — Lihat laporan kesehatan tiap server & penyebab error."
     )
@@ -1134,11 +1217,11 @@ def handle_pesan_utama(message):
 
     bot.send_chat_action(chat_id, 'typing')
     if tugas == "koding":
-        antrean, label_tugas = ["ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "indo", "qwen", "argon", "recursive"], "Auto - Koding"
+        antrean, label_tugas = ["bk_0", "ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "indo", "qwen", "argon", "recursive"], "Auto - Koding"
     elif tugas == "recursive":
-        antrean, label_tugas = ["recursive", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "indo", "ter_0", "best"], "Auto - Recursive"
+        antrean, label_tugas = ["recursive", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "indo", "ter_0", "best"], "Auto - Recursive"
     else:
-        antrean, label_tugas = ["ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "indo", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
+        antrean, label_tugas = ["bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "indo", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
 
     for kode in antrean:
         if kode in KATALOG_MODEL:
