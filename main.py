@@ -1000,4 +1000,150 @@ def handle_semua_tombol(call):
                     bot.answer_callback_query(call.id, f"🟢 AKTIF! Terkunci ke: {info_m['model_id'][:20]}")
                     bot.edit_message_text(pesan_kunci, chat_id=chat_id, message_id=msg_id)
                 else:
-                    teks_popup = f"🔴 MODEL MAT
+                    teks_popup = f"🔴 MODEL MATI!\nModel: {info_m['model_id']}\nSebab: {alasan}"
+                    bot.answer_callback_query(call.id, teks_popup[:195], show_alert=True)
+
+                    info_diagnosa = (
+                        f"🔴 LAPORAN MODEL TIDAK AKTIF\n"
+                        f"─────────────────────────\n"
+                        f"🤖 Model      : {info_m['nama']}\n"
+                        f"🆔 ID Model   : {info_m['model_id']}\n"
+                        f"❌ Status     : TIDAK AKTIF (Merah)\n"
+                        f"📋 Penyebab   : {alasan}\n"
+                        f"─────────────────────────\n"
+                        f"💡 Model ini tidak dikunci agar bot kamu tidak macet. Silakan kembali dan pilih model yang berwarna 🟢 HIJAU."
+                    )
+                    bot.edit_message_text(
+                        info_diagnosa,
+                        chat_id=chat_id,
+                        message_id=msg_id,
+                        reply_markup=buat_tombol_kembali_menu(kode_dipilih)
+                    )
+    except Exception as e:
+        print(f"Callback error: {e}")
+
+@bot.message_handler(commands=['start', 'help', 'status'])
+def handle_start(message):
+    chat_id = message.chat.id
+    bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
+
+    mode = USER_LOCKED_MODEL.get(chat_id, "auto")
+    ket_mode = "OTOMATIS" if mode == "auto" else f"TERKUNCI PADA [{KATALOG_MODEL.get(mode, {}).get('nama', mode)}]"
+    msg = bot.send_message(
+        chat_id,
+        f"🤖 Bot Multi-Model dengan Pemantau Status (🟢/🔴) Siap!\n"
+        f"🔒 Mode Aktif: {ket_mode}\n\n"
+        f"📌 Perintah Utama:\n"
+        f"• /model — Cek status 🟢 Aktif / 🔴 Mati semua model & buka Folder Kategori.\n"
+        f"• /model onekey — Langsung membuka folder model OneKeyLLMAPI.\n"
+        f"• /model gonka — Langsung membuka folder model GonkaRouter.\n"
+        f"• /kuota — Lihat laporan kesehatan tiap server & penyebab error."
+    )
+    catat_pesan_ui(chat_id, msg)
+
+def deteksi_tugas_auto(teks):
+    t = teks.lower()
+    if re.search(r"\b(buatkan video|bikin video|bisa buat video|generate video|video tentang)\b", t):
+        return "video"
+    if re.search(r"^(buatkan|bikin|tolong buatkan|coba buat|lukiskan|gambarin|generate)\s+(gambar|foto|ilustrasi|lukisan)\b", t) or t.startswith("gambar "):
+        return "gambar"
+    if any(k in t for k in ["koding", "coding", "script", "python", "html", "javascript", "php", "error", "bug", "buatkan kode"]):
+        return "koding"
+    if "recursive" in t or "openrouter" in t:
+        return "recursive"
+    return "teks"
+
+@bot.message_handler(func=lambda message: True)
+def handle_pesan_utama(message):
+    if not message.text:
+        return
+    chat_id, teks = message.chat.id, message.text.strip()
+    teks_bersih = re.sub(r'[\(\)\[\]\/]', '', teks.lower()).strip()
+
+    if WAITING_MODEL_CHOICE.get(chat_id, False):
+        kode_ketik = teks_bersih if teks_bersih in KATALOG_MODEL or teks_bersih == "auto" else next((k for k, v in KATALOG_MODEL.items() if teks_bersih == v["model_id"].lower() or (len(teks_bersih) >= 3 and teks_bersih in v["model_id"].lower())), None)
+        if kode_ketik:
+            bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
+            if kode_ketik == "auto":
+                msg_a = bot.send_message(chat_id, kunci_model_pilihan(chat_id, "auto"))
+                catat_pesan_ui(chat_id, msg_a)
+                return
+            ok, alasan = uji_satu_model_cepat(kode_ketik)
+            MODEL_HEALTH_CACHE[kode_ketik] = {"active": ok, "reason": alasan}
+            if ok:
+                msg_k = bot.send_message(chat_id, kunci_model_pilihan(chat_id, kode_ketik))
+                catat_pesan_ui(chat_id, msg_k)
+            else:
+                msg_m = bot.send_message(
+                    chat_id,
+                    f"🔴 Model [{KATALOG_MODEL[kode_ketik]['nama']}] sedang MATI!\nPenyebab: {alasan}",
+                    reply_markup=buat_tombol_kembali_menu(kode_ketik)
+                )
+                catat_pesan_ui(chat_id, msg_m)
+            return
+        else:
+            WAITING_MODEL_CHOICE[chat_id] = False
+
+    mode_terkunci = USER_LOCKED_MODEL.get(chat_id, "auto")
+    if mode_terkunci != "auto":
+        if mode_terkunci == "gambar":
+            kerjakan_gambar(message, teks)
+            return
+        elif mode_terkunci == "video":
+            kerjakan_video(message, teks)
+            return
+        else:
+            bot.send_chat_action(chat_id, 'typing')
+            ok, hasil, nama_pekerja = eksekusi_tunggal(mode_terkunci, teks)
+            if ok:
+                kirim_pesan_rapi(message, hasil, nama_pekerja, f"Terkunci ({KATALOG_MODEL[mode_terkunci]['model_id']})")
+            else:
+                msg_err = bot.reply_to(
+                    message,
+                    f"🔴 Model [{nama_pekerja}] yang sedang kamu kunci tiba-tiba berhenti merespons!\n"
+                    f"📋 Penyebab: {hasil}\n\n"
+                    f"💡 Ketik /model untuk memilih model lain yang berstatus 🟢 Hijau, atau ketik /model auto."
+                )
+                catat_pesan_ui(chat_id, msg_err)
+            return
+
+    tugas = deteksi_tugas_auto(teks)
+    if tugas == "video":
+        kerjakan_video(message, teks)
+        return
+    if tugas == "gambar":
+        prompt_img = re.sub(r"^(buatkan|bikin|tolong buatkan|coba buat|lukiskan|gambarin|generate)\s+(gambar|foto|ilustrasi|lukisan)\b", "", teks, flags=re.IGNORECASE).strip() or teks
+        kerjakan_gambar(message, prompt_img)
+        return
+
+    bot.send_chat_action(chat_id, 'typing')
+    if tugas == "koding":
+        antrean, label_tugas = ["ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "indo", "qwen", "argon", "recursive"], "Auto - Koding"
+    elif tugas == "recursive":
+        antrean, label_tugas = ["recursive", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "indo", "ter_0", "best"], "Auto - Recursive"
+    else:
+        antrean, label_tugas = ["ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "indo", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
+
+    for kode in antrean:
+        if kode in KATALOG_MODEL:
+            ok, hasil, nama_pekerja = eksekusi_tunggal(kode, teks)
+            if ok:
+                kirim_pesan_rapi(message, hasil, nama_pekerja, label_tugas)
+                return
+
+    bot.reply_to(message, "🔴 Seluruh server utama & cadangan gagal merespons. Ketik /model untuk melihat diagnosa penyebab setiap server mati.")
+
+if __name__ == "__main__":
+    print("Menjalankan pemeriksaan awal seluruh model AI...")
+    try:
+        periksa_kesehatan_serentak()
+        bot.remove_webhook()
+        time.sleep(2)
+    except Exception:
+        pass
+    print("Bot siap menerima pesan!")
+    while True:
+        try:
+            bot.infinity_polling(timeout=20, long_polling_timeout=10, skip_pending=True)
+        except Exception:
+            time.sleep(8)
