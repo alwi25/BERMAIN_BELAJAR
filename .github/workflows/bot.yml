@@ -35,6 +35,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
+          ROUTEVA_API_KEY: ${{ secrets.ROUTEVA_API_KEY }}
           BOTKEEP_API_KEY: ${{ secrets.BOTKEEP_API_KEY }}
           ONEKEY_API_KEY: ${{ secrets.ONEKEY_API_KEY }}
           GONKA_API_KEY: ${{ secrets.GONKA_API_KEY }}
