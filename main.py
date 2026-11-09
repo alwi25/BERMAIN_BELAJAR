@@ -18,6 +18,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 1. Kredensial Murni dari GitHub Secrets
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 PROXY_URL = os.environ.get("PROXY_URL", "").strip()
+MASB_API_KEY = os.environ.get("MASB_API_KEY", "").strip()
 ROUTEVA_API_KEY = os.environ.get("ROUTEVA_API_KEY", "").strip()
 BOTKEEP_API_KEY = os.environ.get("BOTKEEP_API_KEY", "").strip()
 ONEKEY_API_KEY = os.environ.get("ONEKEY_API_KEY", "").strip()
@@ -39,6 +40,7 @@ if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN kosong! Harap isi di GitHub Secrets.")
 
 # Daftar Base URL Server
+MASB_BASE_URL = "https://ai.masb.web.id/v1"
 ROUTEVA_BASE_URL = "https://api.routeva.tech/v1"
 BOTKEEP_BASE_URL = "http://node18.botkeep.cloud:61172/v1"
 ONEKEY_BASE_URL = "https://api.onekeyllmapi.com/v1"
@@ -449,7 +451,7 @@ def catat_pesan_ui(chat_id, msg_obj):
     if msg_obj.message_id not in UI_HISTORY_MESSAGES[chat_id]:
         UI_HISTORY_MESSAGES[chat_id].append(msg_obj.message_id)
 
-# 2. Penyisir Model Otomatis
+# 2. Penyisir Model Otomatis (Masb AI, Routeva, BotKeep, OneKey, GonkaRouter, ZenMUX, 9Router, Dahl)
 ZENMUX_ACTIVE_BASE = ZENMUX_CANDIDATE_BASES[0]
 
 def sisir_endpoint_umum(base_url, api_key, defaults):
@@ -484,12 +486,16 @@ def sisir_endpoint_umum(base_url, api_key, defaults):
             found.append(d)
     return found
 
+def sisir_model_masb():
+    defaults = ["deepseek-r1", "deepseek-v3", "qwen-2.5-coder-32b-instruct", "claude-3-7-sonnet", "gpt-4o", "llama-3.3-70b-instruct"]
+    return sisir_endpoint_umum(MASB_BASE_URL, MASB_API_KEY, defaults)
+
 def sisir_model_routeva():
-    defaults = ["deepseek-r1", "deepseek-v3", "qwen-2.5-coder-32b-instruct", "qwen-2.5-72b-instruct", "claude-3-7-sonnet", "gpt-4o", "gpt-4o-mini", "llama-3.3-70b-instruct"]
+    defaults = ["deepseek-r1", "deepseek-v3", "qwen-2.5-coder-32b-instruct", "claude-3-7-sonnet", "gpt-4o", "llama-3.3-70b-instruct"]
     return sisir_endpoint_umum(ROUTEVA_BASE_URL, ROUTEVA_API_KEY, defaults)
 
 def sisir_model_botkeep():
-    defaults = ["deepseek-r1", "deepseek-v3", "qwen-2.5-coder-32b", "qwen-2.5-72b-instruct", "claude-3-7-sonnet", "gpt-4o", "llama-3.3-70b-instruct"]
+    defaults = ["deepseek-r1", "deepseek-v3", "qwen-2.5-coder-32b", "claude-3-7-sonnet", "gpt-4o", "llama-3.3-70b-instruct"]
     return sisir_endpoint_umum(BOTKEEP_BASE_URL, BOTKEEP_API_KEY, defaults)
 
 def sisir_model_onekey():
@@ -497,7 +503,7 @@ def sisir_model_onekey():
     return sisir_endpoint_umum(ONEKEY_BASE_URL, ONEKEY_API_KEY, defaults)
 
 def sisir_model_gonka():
-    defaults = ["deepseek-r1", "deepseek-v3", "qwen-2.5-coder-32b-instruct", "qwen-2.5-72b-instruct", "claude-3-7-sonnet", "gpt-4o", "llama-3.3-70b-instruct"]
+    defaults = ["deepseek-r1", "deepseek-v3", "qwen-2.5-coder-32b-instruct", "claude-3-7-sonnet", "gpt-4o", "llama-3.3-70b-instruct"]
     return sisir_endpoint_umum(GONKA_BASE_URL, GONKA_API_KEY, defaults)
 
 def sisir_model_zenmux():
@@ -536,6 +542,7 @@ def sisir_model_dahl():
     defaults = ["qwen-3.8-flash", "minimax", "llama-3.1-70b", "deepseek-coder"]
     return sisir_endpoint_umum(DAHL_BASE_URL, DAHL_API_KEY, defaults)
 
+MASB_MODELS = sisir_model_masb()
 ROUTEVA_MODELS = sisir_model_routeva()
 BOTKEEP_MODELS = sisir_model_botkeep()
 ONEKEY_MODELS = sisir_model_onekey()
@@ -589,10 +596,12 @@ KATALOG_MODEL = {
 }
 
 def segarkan_folder_kategori():
-    kunci_lama = [k for k in list(KATALOG_MODEL.keys()) if k.startswith(("rv_", "bk_", "ok_", "gonka_", "zm_", "ter_", "dahl_"))]
+    kunci_lama = [k for k in list(KATALOG_MODEL.keys()) if k.startswith(("masb_", "rv_", "bk_", "ok_", "gonka_", "zm_", "ter_", "dahl_"))]
     for k in kunci_lama:
         del KATALOG_MODEL[k]
 
+    for idx, m_id in enumerate(MASB_MODELS[:12]):
+        KATALOG_MODEL[f"masb_{idx}"] = {"provider": "masb", "model_id": m_id, "nama": f"Masb: {m_id}", "tugas": "Masb AI Gateway"}
     for idx, m_id in enumerate(ROUTEVA_MODELS[:12]):
         KATALOG_MODEL[f"rv_{idx}"] = {"provider": "routeva", "model_id": m_id, "nama": f"Routeva: {m_id}", "tugas": "Routeva Tech AI Gateway"}
     for idx, m_id in enumerate(BOTKEEP_MODELS[:12]):
@@ -641,6 +650,7 @@ def uji_satu_model_cepat(kode_model):
         return True, "Layanan Visual Aktif (Gratis / Tanpa Kuota)."
 
     peta_kunci = {
+        "masb": (MASB_API_KEY, "MASB_API_KEY", MASB_BASE_URL),
         "routeva": (ROUTEVA_API_KEY, "ROUTEVA_API_KEY", ROUTEVA_BASE_URL),
         "botkeep": (BOTKEEP_API_KEY, "BOTKEEP_API_KEY", BOTKEEP_BASE_URL),
         "onekey": (ONEKEY_API_KEY, "ONEKEY_API_KEY", ONEKEY_BASE_URL),
@@ -734,6 +744,7 @@ def ambil_status_kategori(awalan):
 def buat_menu_utama(mode_aktif, chat_id=None):
     markup = InlineKeyboardMarkup(row_width=2)
 
+    ikon_masb, akt_masb, tot_masb = ambil_status_kategori("masb_")
     ikon_rv, akt_rv, tot_rv = ambil_status_kategori("rv_")
     ikon_bk, akt_bk, tot_bk = ambil_status_kategori("bk_")
     ikon_ok, akt_ok, tot_ok = ambil_status_kategori("ok_")
@@ -742,6 +753,7 @@ def buat_menu_utama(mode_aktif, chat_id=None):
     ikon_ter, akt_ter, tot_ter = ambil_status_kategori("ter_")
     ikon_dahl, akt_dahl, tot_dahl = ambil_status_kategori("dahl_")
 
+    markup.row(InlineKeyboardButton(f"{ikon_masb}📂 MASB AI ({akt_masb}/{tot_masb} Aktif)", callback_data="cat_masb"))
     markup.row(InlineKeyboardButton(f"{ikon_rv}📂 ROUTEVA TECH ({akt_rv}/{tot_rv} Aktif)", callback_data="cat_routeva"))
     markup.row(InlineKeyboardButton(f"{ikon_bk}📂 BOTKEEP NODE18 ({akt_bk}/{tot_bk} Aktif)", callback_data="cat_botkeep"))
     markup.row(InlineKeyboardButton(f"{ikon_ok}📂 ONEKEY LLM ({akt_ok}/{tot_ok} Aktif)", callback_data="cat_onekey"))
@@ -752,7 +764,7 @@ def buat_menu_utama(mode_aktif, chat_id=None):
 
     tombol_list = []
     for kode, info in KATALOG_MODEL.items():
-        if kode.startswith(("rv_", "bk_", "ok_", "gonka_", "zm_", "ter_", "dahl_")):
+        if kode.startswith(("masb_", "rv_", "bk_", "ok_", "gonka_", "zm_", "ter_", "dahl_")):
             continue
         ikon = ambil_ikon_status(kode, mode_aktif)
         tombol_list.append(InlineKeyboardButton(f"{ikon} {kode.upper()} ({info['nama'][:10]})", callback_data=f"lock_{kode}"))
@@ -779,7 +791,9 @@ def buat_submenu_folder(mode_aktif, awalan, callback_refresh):
 
 def buat_tombol_kembali_menu(kode_model):
     markup = InlineKeyboardMarkup()
-    if kode_model.startswith("rv_"):
+    if kode_model.startswith("masb_"):
+        markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder Masb AI", callback_data="cat_masb"))
+    elif kode_model.startswith("rv_"):
         markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder Routeva", callback_data="cat_routeva"))
     elif kode_model.startswith("bk_"):
         markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder BotKeep Node18", callback_data="cat_botkeep"))
@@ -829,8 +843,9 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None, chat_id=None)
     riwayat_user = CHAT_HISTORY.get(chat_id, []) if chat_id else None
 
     try:
-        if provider in ["routeva", "botkeep", "onekey", "gonka", "itera", "vascoo", "dahl", "ter", "indo", "openai", "bestllm", "bejo", "nocta"]:
+        if provider in ["masb", "routeva", "botkeep", "onekey", "gonka", "itera", "vascoo", "dahl", "ter", "indo", "openai", "bestllm", "bejo", "nocta"]:
             peta_base = {
+                "masb": (MASB_BASE_URL, MASB_API_KEY),
                 "routeva": (ROUTEVA_BASE_URL, ROUTEVA_API_KEY),
                 "botkeep": (BOTKEEP_BASE_URL, BOTKEEP_API_KEY),
                 "onekey": (ONEKEY_BASE_URL, ONEKEY_API_KEY),
@@ -949,7 +964,7 @@ def kerjakan_video(message, teks_user):
     instruksi_video = "Kamu AI Video Director. Buatlah: 1. Skenario Visual detik demi detik, 2. Prompt Teknis Bahasa Inggris untuk engine video AI."
     teks_skenario, penulis = "", "Video Director"
 
-    antrean_video = ["rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "zm_0", "indo", "chatgpt", "qwen", "recursive"]
+    antrean_video = ["masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "zm_0", "indo", "chatgpt", "qwen", "recursive"]
     for k in antrean_video:
         if k in KATALOG_MODEL:
             ok, hasil, label = eksekusi_tunggal(k, teks_user, instruksi_video, message.chat.id)
@@ -1078,6 +1093,22 @@ def handle_command_model(message):
         catat_pesan_ui(chat_id, msg_h)
         return
 
+    if arg in ["masb", "ai"]:
+        msg_wait = bot.send_message(chat_id, "🔍 Memeriksa kesehatan model di dalam Masb AI...")
+        catat_pesan_ui(chat_id, msg_wait)
+        periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("masb_")])
+        try:
+            bot.edit_message_text(
+                teks_submenu_folder_str("MASB AI", mode_sekarang, "masb_"),
+                chat_id=chat_id,
+                message_id=msg_wait.message_id,
+                reply_markup=buat_submenu_folder(mode_sekarang, "masb_", "refresh_masb")
+            )
+        except telebot.apihelper.ApiTelegramException as e:
+            if "message is not modified" in str(e):
+                pass
+        return
+
     if arg in ["routeva", "rv"]:
         msg_wait = bot.send_message(chat_id, "🔍 Memeriksa kesehatan model di dalam Routeva Tech...")
         catat_pesan_ui(chat_id, msg_wait)
@@ -1194,7 +1225,7 @@ def handle_cek_kuota(message):
     periksa_kesehatan_serentak()
 
     laporan = "📊 LAPORAN KESEHATAN SERVER & KUOTA API\n─────────────────────────\n"
-    daftar_utama = ["rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "indo", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
+    daftar_utama = ["masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "indo", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
     for k in daftar_utama:
         if k in KATALOG_MODEL:
             sehat = MODEL_HEALTH_CACHE.get(k, {})
@@ -1211,7 +1242,7 @@ def handle_cek_kuota(message):
 # 9. Handler Klik Tombol
 @bot.callback_query_handler(func=lambda call: True)
 def handle_semua_tombol(call):
-    global ROUTEVA_MODELS, BOTKEEP_MODELS, ONEKEY_MODELS, GONKA_MODELS, ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
+    global MASB_MODELS, ROUTEVA_MODELS, BOTKEEP_MODELS, ONEKEY_MODELS, GONKA_MODELS, ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
     chat_id, data = call.message.chat.id, call.data
     msg_id = call.message.message_id
     mode_sekarang = USER_LOCKED_MODEL.get(chat_id, "auto")
@@ -1293,506 +1324,4 @@ def handle_semua_tombol(call):
                     f"👤 <b>Instruksi Kamu Sebelumnya:</b>\n{html.escape(u_t[:400])}\n\n"
                     f"🤖 <b>Jawaban / Kodingan Terakhir AI:</b>\n{format_ke_html_telegram(a_t[:2600])}\n"
                     f"─────────────────────────\n"
-                    f"✅ <b>Silakan ketik instruksi lanjutanmu di bawah!</b>"
-                )
-                markup_lanjut = InlineKeyboardMarkup()
-                if blok_tersimpan:
-                    markup_lanjut.row(InlineKeyboardButton(f"📋 Salin Source Code ({len(blok_tersimpan)} Blok)", callback_data="copy_raw_code"))
-                    markup_lanjut.row(InlineKeyboardButton("📥 Unduh File Source Code", callback_data="dl_raw_code"))
-                markup_lanjut.row(InlineKeyboardButton("📜 Kembali ke Daftar History", callback_data="menu_history"))
-                markup_lanjut.row(InlineKeyboardButton("🎛 Kembali ke Menu Model", callback_data="back_main"))
-                try:
-                    bot.edit_message_text(teks_resume[:4000], chat_id=chat_id, message_id=msg_id, parse_mode="HTML", reply_markup=markup_lanjut)
-                except telebot.apihelper.ApiTelegramException as e:
-                    if "message is not modified" in str(e):
-                        pass
-            else:
-                bot.answer_callback_query(call.id, "⚠️ Riwayat tidak ditemukan.")
-            return
-
-        elif data.startswith("resproj_"):
-            idx_proj = int(data.replace("resproj_", ""))
-            proj = pulihkan_proyek_arsip(chat_id, idx_proj)
-            if proj:
-                pasangan_aktif = ambil_pasangan_riwayat(chat_id)
-                u_last, a_last = pasangan_aktif[-1] if pasangan_aktif else ("", "")
-                blok_tersimpan = ekstrak_blok_kode(a_last)
-                if blok_tersimpan:
-                    LAST_CODE_BLOCKS[chat_id] = blok_tersimpan
-                bot.answer_callback_query(call.id, f"📂 Proyek '{proj['title'][:15]}' berhasil dibuka kembali!")
-                teks_proj = (
-                    f"📂 PROYEK LAMA BERHASIL DIPULIHKAN!\n"
-                    f"─────────────────────────\n"
-                    f"🏷️ Nama Proyek : {proj['title']}\n"
-                    f"💬 Total Memori : {len(pasangan_aktif)} Interaksi\n\n"
-                    f"👤 Pesan Terakhir:\n{u_last[:500]}\n\n"
-                    f"🤖 Balasan Terakhir:\n{a_last[:2000]}\n"
-                    f"─────────────────────────\n"
-                    f"✅ Proyek ini sekarang aktif kembali."
-                )
-                markup_lanjut = InlineKeyboardMarkup()
-                if blok_tersimpan:
-                    markup_lanjut.row(InlineKeyboardButton(f"📋 Salin Source Code ({len(blok_tersimpan)} Blok)", callback_data="copy_raw_code"))
-                    markup_lanjut.row(InlineKeyboardButton("📥 Unduh File Source Code", callback_data="dl_raw_code"))
-                markup_lanjut.row(InlineKeyboardButton("📜 Lihat Langkah History", callback_data="menu_history"))
-                markup_lanjut.row(InlineKeyboardButton("🎛 Menu Utama Model", callback_data="back_main"))
-                try:
-                    bot.edit_message_text(teks_proj[:4000], chat_id=chat_id, message_id=msg_id, reply_markup=markup_lanjut)
-                except telebot.apihelper.ApiTelegramException as e:
-                    if "message is not modified" in str(e):
-                        pass
-            else:
-                bot.answer_callback_query(call.id, "⚠️ Proyek arsip tidak ditemukan.")
-            return
-
-        elif data == "archive_new":
-            arsipkan_sesi_ke_proyek(chat_id)
-            bot.answer_callback_query(call.id, "💾 Proyek disimpan ke Arsip! Siap mulai topik baru.")
-            try:
-                bot.edit_message_text(
-                    teks_menu_history_str(chat_id),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_markup_history(chat_id)
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-            return
-
-        elif data.startswith("delhist_"):
-            idx_hapus = int(data.replace("delhist_", ""))
-            if hapus_satu_pasangan_riwayat(chat_id, idx_hapus):
-                bot.answer_callback_query(call.id, f"🗑️ Riwayat #{idx_hapus + 1} dihapus!")
-            try:
-                bot.edit_message_text(
-                    teks_menu_history_str(chat_id),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_markup_history(chat_id)
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-            return
-        elif data.startswith("delproj_"):
-            idx_proj = int(data.replace("delproj_", ""))
-            if hapus_proyek_arsip(chat_id, idx_proj):
-                bot.answer_callback_query(call.id, f"🗑️ Arsip Proyek P{idx_proj + 1} dihapus!")
-            try:
-                bot.edit_message_text(
-                    teks_menu_history_str(chat_id),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_markup_history(chat_id)
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-            return
-        elif data == "clear_all_hist":
-            CHAT_HISTORY[chat_id] = []
-            SAVED_PROJECTS[chat_id] = []
-            bot.answer_callback_query(call.id, "🔥 Seluruh riwayat & arsip proyek berhasil dihapus!")
-            try:
-                bot.edit_message_text(
-                    teks_menu_history_str(chat_id),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_markup_history(chat_id)
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-            return
-
-        if data == "ping_all":
-            bot.answer_callback_query(call.id, "🔄 Mengecek ulang semua server...")
-            periksa_kesehatan_serentak()
-            try:
-                bot.edit_message_text(
-                    teks_menu_utama_str(mode_sekarang),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_menu_utama(mode_sekarang, chat_id)
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "cat_routeva":
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("ROUTEVA TECH", mode_sekarang, "rv_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "rv_", "refresh_routeva")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "cat_botkeep":
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("BOTKEEP NODE18", mode_sekarang, "bk_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "bk_", "refresh_botkeep")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "cat_onekey":
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("ONEKEY LLM API", mode_sekarang, "ok_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "ok_", "refresh_onekey")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "cat_gonka":
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("GONKAROUTER AI", mode_sekarang, "gonka_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "gonka_", "refresh_gonka")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "cat_zenmux":
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("ZENMUX AI", mode_sekarang, "zm_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "zm_", "refresh_zm")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "cat_ter":
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("9ROUTER GLM", mode_sekarang, "ter_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "ter_", "refresh_ter")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "cat_dahl":
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("DAHL INFERENCE", mode_sekarang, "dahl_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "dahl_", "refresh_dahl")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "refresh_routeva":
-            bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder Routeva Tech...")
-            global ROUTEVA_MODELS
-            ROUTEVA_MODELS = sisir_model_routeva()
-            segarkan_folder_kategori()
-            periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("rv_")])
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("ROUTEVA TECH", mode_sekarang, "rv_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "rv_", "refresh_routeva")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "refresh_botkeep":
-            bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder BotKeep Node18...")
-            global BOTKEEP_MODELS
-            BOTKEEP_MODELS = sisir_model_botkeep()
-            segarkan_folder_kategori()
-            periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("bk_")])
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("BOTKEEP NODE18", mode_sekarang, "bk_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "bk_", "refresh_botkeep")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "refresh_onekey":
-            bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder OneKey LLM...")
-            global ONEKEY_MODELS
-            ONEKEY_MODELS = sisir_model_onekey()
-            segarkan_folder_kategori()
-            periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("ok_")])
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("ONEKEY LLM API", mode_sekarang, "ok_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "ok_", "refresh_onekey")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "refresh_gonka":
-            bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder GonkaRouter...")
-            global GONKA_MODELS
-            GONKA_MODELS = sisir_model_gonka()
-            segarkan_folder_kategori()
-            periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("gonka_")])
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("GONKAROUTER AI", mode_sekarang, "gonka_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "gonka_", "refresh_gonka")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "refresh_zm":
-            bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder ZenMux...")
-            global ZENMUX_MODELS
-            ZENMUX_MODELS = sisir_model_zenmux()
-            segarkan_folder_kategori()
-            periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("zm_")])
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("ZENMUX AI", mode_sekarang, "zm_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "zm_", "refresh_zm")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "refresh_ter":
-            bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder 9Router...")
-            global TER_MODELS
-            TER_MODELS = sisir_model_ter()
-            segarkan_folder_kategori()
-            periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("ter_")])
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("9ROUTER GLM", mode_sekarang, "ter_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "ter_", "refresh_ter")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "refresh_dahl":
-            bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder Dahl...")
-            global DAHL_MODELS
-            DAHL_MODELS = sisir_model_dahl()
-            segarkan_folder_kategori()
-            periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("dahl_")])
-            try:
-                bot.edit_message_text(
-                    teks_submenu_folder_str("DAHL INFERENCE", mode_sekarang, "dahl_"),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_submenu_folder(mode_sekarang, "dahl_", "refresh_dahl")
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data == "back_main":
-            try:
-                bot.edit_message_text(
-                    teks_menu_utama_str(mode_sekarang),
-                    chat_id=chat_id,
-                    message_id=msg_id,
-                    reply_markup=buat_menu_utama(mode_sekarang, chat_id)
-                )
-            except telebot.apihelper.ApiTelegramException as e:
-                if "message is not modified" in str(e):
-                    pass
-        elif data.startswith("lock_"):
-            kode_dipilih = data.replace("lock_", "")
-            if kode_dipilih == "auto":
-                pesan_auto = kunci_model_pilihan(chat_id, "auto")
-                bot.answer_callback_query(call.id, "🔄 Mode Otomatis Aktif!")
-                try:
-                    bot.edit_message_text(pesan_auto, chat_id=chat_id, message_id=msg_id)
-                except telebot.apihelper.ApiTelegramException as e:
-                    if "message is not modified" in str(e):
-                        pass
-                return
-
-            if kode_dipilih in KATALOG_MODEL:
-                ok, alasan = uji_satu_model_cepat(kode_dipilih)
-                MODEL_HEALTH_CACHE[kode_dipilih] = {"active": ok, "reason": alasan}
-                info_m = KATALOG_MODEL[kode_dipilih]
-
-                if ok:
-                    pesan_kunci = kunci_model_pilihan(chat_id, kode_dipilih)
-                    bot.answer_callback_query(call.id, f"🟢 AKTIF! Terkunci ke: {info_m['model_id'][:20]}")
-                    try:
-                        bot.edit_message_text(pesan_kunci, chat_id=chat_id, message_id=msg_id)
-                    except telebot.apihelper.ApiTelegramException as e:
-                        if "message is not modified" in str(e):
-                            pass
-                else:
-                    teks_popup = f"🔴 MODEL MATI!\nModel: {info_m['model_id']}\nSebab: {alasan}"
-                    bot.answer_callback_query(call.id, teks_popup[:195], show_alert=True)
-
-                    info_diagnosa = (
-                        f"🔴 LAPORAN MODEL TIDAK AKTIF\n"
-                        f"─────────────────────────\n"
-                        f"🤖 Model      : {info_m['nama']}\n"
-                        f"🆔 ID Model   : {info_m['model_id']}\n"
-                        f"❌ Status     : TIDAK AKTIF (Merah)\n"
-                        f"📋 Penyebab   : {alasan}\n"
-                        f"─────────────────────────\n"
-                        f"💡 Model ini tidak dikunci agar bot kamu tidak macet. Silakan kembali dan pilih model yang berwarna 🟢 HIJAU."
-                    )
-                    try:
-                        bot.edit_message_text(
-                            info_diagnosa,
-                            chat_id=chat_id,
-                            message_id=msg_id,
-                            reply_markup=buat_tombol_kembali_menu(kode_dipilih)
-                        )
-                    except telebot.apihelper.ApiTelegramException as e:
-                        if "message is not modified" in str(e):
-                            pass
-    except Exception as e:
-        print(f"Callback error: {e}")
-
-@bot.message_handler(commands=['start', 'help', 'status'])
-def handle_start(message):
-    chat_id = message.chat.id
-    bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
-
-    mode = USER_LOCKED_MODEL.get(chat_id, "auto")
-    ket_mode = "OTOMATIS" if mode == "auto" else f"TERKUNCI PADA [{KATALOG_MODEL.get(mode, {}).get('nama', mode)}]"
-    msg = bot.send_message(
-        chat_id,
-        f"🤖 Bot Multi-Model dengan Salin Source Code 1-Klik & Pengelola Proyek Siap!\n"
-        f"🔒 Mode Aktif: {ket_mode}\n\n"
-        f"📌 Perintah Utama:\n"
-        f"• /model — Cek status 🟢 Aktif / 🔴 Mati semua model & buka Folder Kategori.\n"
-        f"• /history — Lihat riwayat, pilih proyek lama untuk dilanjutkan (▶️ Lanjut), atau hapus riwayat.\n"
-        f"• /reset — Simpan proyek saat ini ke arsip & mulai proyek baru.\n"
-        f"• /kuota — Lihat laporan kesehatan tiap server & penyebab error."
-    )
-    catat_pesan_ui(chat_id, msg)
-
-def deteksi_tugas_auto(teks):
-    t = teks.lower()
-    if re.search(r"\b(buatkan video|bikin video|bisa buat video|generate video|video tentang)\b", t):
-        return "video"
-    if re.search(r"^(buatkan|bikin|tolong buatkan|coba buat|lukiskan|gambarin|generate)\s+(gambar|foto|ilustrasi|lukisan)\b", t) or t.startswith("gambar "):
-        return "gambar"
-    if any(k in t for k in ["koding", "coding", "script", "python", "html", "javascript", "php", "error", "bug", "buatkan kode"]):
-        return "koding"
-    if "recursive" in t or "openrouter" in t:
-        return "recursive"
-    return "teks"
-
-@bot.message_handler(func=lambda message: True)
-def handle_pesan_utama(message):
-    if not message.text:
-        return
-    chat_id, teks = message.chat.id, message.text.strip()
-    teks_bersih = re.sub(r'[\(\)\[\]\/]', '', teks.lower()).strip()
-
-    if WAITING_MODEL_CHOICE.get(chat_id, False):
-        kode_ketik = teks_bersih if teks_bersih in KATALOG_MODEL or teks_bersih == "auto" else next((k for k, v in KATALOG_MODEL.items() if teks_bersih == v["model_id"].lower() or (len(teks_bersih) >= 3 and teks_bersih in v["model_id"].lower())), None)
-        if kode_ketik:
-            bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
-            if kode_ketik == "auto":
-                msg_a = bot.send_message(chat_id, kunci_model_pilihan(chat_id, "auto"))
-                catat_pesan_ui(chat_id, msg_a)
-                return
-            ok, alasan = uji_satu_model_cepat(kode_ketik)
-            MODEL_HEALTH_CACHE[kode_ketik] = {"active": ok, "reason": alasan}
-            if ok:
-                msg_k = bot.send_message(chat_id, kunci_model_pilihan(chat_id, kode_ketik))
-                catat_pesan_ui(chat_id, msg_k)
-            else:
-                msg_m = bot.send_message(
-                    chat_id,
-                    f"🔴 Model [{KATALOG_MODEL[kode_ketik]['nama']}] sedang MATI!\nPenyebab: {alasan}",
-                    reply_markup=buat_tombol_kembali_menu(kode_ketik)
-                )
-                catat_pesan_ui(chat_id, msg_m)
-            return
-        else:
-            WAITING_MODEL_CHOICE[chat_id] = False
-
-    mode_terkunci = USER_LOCKED_MODEL.get(chat_id, "auto")
-    if mode_terkunci != "auto":
-        if mode_terkunci == "gambar":
-            kerjakan_gambar(message, teks)
-            return
-        elif mode_terkunci == "video":
-            kerjakan_video(message, teks)
-            return
-        else:
-            bot.send_chat_action(chat_id, 'typing')
-            ok, hasil, nama_pekerja = eksekusi_tunggal(mode_terkunci, teks, chat_id=chat_id)
-            if ok:
-                kirim_pesan_rapi(message, hasil, nama_pekerja, f"Terkunci ({KATALOG_MODEL[mode_terkunci]['model_id']})")
-            else:
-                msg_err = bot.reply_to(
-                    message,
-                    f"🔴 Model [{nama_pekerja}] yang sedang kamu kunci tiba-tiba berhenti merespons!\n"
-                    f"📋 Penyebab: {hasil}\n\n"
-                    f"💡 Ketik /model untuk memilih model lain yang berstatus 🟢 Hijau, atau ketik /model auto."
-                )
-                catat_pesan_ui(chat_id, msg_err)
-            return
-
-    tugas = deteksi_tugas_auto(teks)
-    if tugas == "video":
-        kerjakan_video(message, teks)
-        return
-    if tugas == "gambar":
-        prompt_img = re.sub(r"^(buatkan|bikin|tolong buatkan|coba buat|lukiskan|gambarin|generate)\s+(gambar|foto|ilustrasi|lukisan)\b", "", teks, flags=re.IGNORECASE).strip() or teks
-        kerjakan_gambar(message, prompt_img)
-        return
-
-    bot.send_chat_action(chat_id, 'typing')
-    if tugas == "koding":
-        antrean, label_tugas = ["rv_0", "bk_0", "ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "indo", "qwen", "argon", "recursive"], "Auto - Koding"
-    elif tugas == "recursive":
-        antrean, label_tugas = ["recursive", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "indo", "ter_0", "best"], "Auto - Recursive"
-    else:
-        antrean, label_tugas = ["rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "indo", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
-
-    for kode in antrean:
-        if kode in KATALOG_MODEL:
-            ok, hasil, nama_pekerja = eksekusi_tunggal(kode, teks, chat_id=chat_id)
-            if ok:
-                kirim_pesan_rapi(message, hasil, nama_pekerja, label_tugas)
-                return
-
-    bot.reply_to(message, "🔴 Seluruh server utama & cadangan gagal merespons. Ketik /model untuk melihat diagnosa penyebab setiap server mati.")
-
-if __name__ == "__main__":
-    print("Menjalankan pemeriksaan awal seluruh model AI...")
-    try:
-        periksa_kesehatan_serentak()
-        bot.remove_webhook()
-        time.sleep(2)
-    except Exception:
-        pass
-    print("Bot siap menerima pesan!")
-    while True:
-        try:
-            bot.infinity_polling(timeout=20, long_polling_timeout=10, skip_pending=True)
-        except Exception:
-            time.sleep(8)
+                    f"✅ <b>Silakan ketik instruksi
