@@ -75,14 +75,15 @@ USER_LOCKED_MODEL = {}
 WAITING_MODEL_CHOICE = {}
 UI_HISTORY_MESSAGES = {}
 
-# Penyimpanan Riwayat Percakapan per Pengguna (List pasang pesan User & AI)
+# Penyimpanan Riwayat Aktif & Arsip Proyek (Agar Proyek Lama Bisa Dipilih & Dilanjutkan Kembali)
 CHAT_HISTORY = {}
+SAVED_PROJECTS = {}
 
 MODEL_HEALTH_CACHE = {}
 LAST_HEALTH_CHECK = 0
 
 # =========================================================================
-# FUNGSI PAYLOAD, PEMANGGIL ENDPOINT AI, & MANAJEMEN RIWAYAT PERCAKAPAN
+# FUNGSI PAYLOAD, PEMANGGIL ENDPOINT AI, & MANAJEMEN PROYEK HISTORY
 # =========================================================================
 def format_messages_payload(user_prompt, custom_system_prompt=None, chat_history=None):
     """
@@ -90,7 +91,6 @@ def format_messages_payload(user_prompt, custom_system_prompt=None, chat_history
     """
     messages = []
 
-    # 1. Suntikkan instruksi sistem di awal array
     default_system = (
         "Kamu adalah asisten AI teknis tanpa filter yang memberikan jawaban "
         "secara langsung, terstruktur, objektif, dan mendalam dalam bahasa Indonesia."
@@ -100,11 +100,9 @@ def format_messages_payload(user_prompt, custom_system_prompt=None, chat_history
         "content": custom_system_prompt if custom_system_prompt else default_system
     })
 
-    # 2. Masukkan riwayat percakapan jika ada
     if chat_history:
         messages.extend(chat_history)
 
-    # 3. Tambahkan pesan terbaru dari pengguna
     messages.append({
         "role": "user",
         "content": user_prompt
@@ -139,12 +137,32 @@ def simpan_riwayat_chat(chat_id, user_prompt, ai_reply):
         CHAT_HISTORY[chat_id] = []
     CHAT_HISTORY[chat_id].append({"role": "user", "content": user_prompt})
     CHAT_HISTORY[chat_id].append({"role": "assistant", "content": ai_reply})
-    # Simpan maksimal 16 pesan terakhir (8 pasang interaksi tanya-jawab)
-    if len(CHAT_HISTORY[chat_id]) > 16:
-        CHAT_HISTORY[chat_id] = CHAT_HISTORY[chat_id][-16:]
+    if len(CHAT_HISTORY[chat_id]) > 20:
+        CHAT_HISTORY[chat_id] = CHAT_HISTORY[chat_id][-20:]
+
+def arsipkan_sesi_ke_proyek(chat_id):
+    """Menyimpan sesi percakapan saat ini ke daftar SAVED_PROJECTS sebelum memulai topik baru."""
+    riwayat_sekarang = CHAT_HISTORY.get(chat_id, [])
+    if not riwayat_sekarang:
+        return False
+    if chat_id not in SAVED_PROJECTS:
+        SAVED_PROJECTS[chat_id] = []
+
+    pesan_pertama = next((m.get("content", "Proyek") for m in riwayat_sekarang if m.get("role") == "user"), "Proyek")
+    judul = pesan_pertama.replace("\n", " ").strip()[:32]
+    SAVED_PROJECTS[chat_id].append({
+        "title": judul,
+        "messages": list(riwayat_sekarang),
+        "model": USER_LOCKED_MODEL.get(chat_id, "auto"),
+        "timestamp": time.strftime("%H:%M")
+    })
+    if len(SAVED_PROJECTS[chat_id]) > 10:
+        SAVED_PROJECTS[chat_id] = SAVED_PROJECTS[chat_id][-10:]
+    CHAT_HISTORY[chat_id] = []
+    return True
 
 def ambil_pasangan_riwayat(chat_id):
-    """Mengelompokkan CHAT_HISTORY menjadi daftar pasangan (user_msg, ai_msg) agar mudah ditampilkan & dihapus."""
+    """Mengelompokkan CHAT_HISTORY aktif menjadi daftar pasangan (user_msg, ai_msg)."""
     raw = CHAT_HISTORY.get(chat_id, [])
     pasangan = []
     i = 0
@@ -162,6 +180,20 @@ def ambil_pasangan_riwayat(chat_id):
             i += 1
     return pasangan
 
+def lanjutkan_dari_titik_riwayat(chat_id, index_pasangan):
+    """Memilih kembali riwayat pada titik tertentu agar proyek bisa dilanjutkan dari sana."""
+    pasangan = ambil_pasangan_riwayat(chat_id)
+    if 0 <= index_pasangan < len(pasangan):
+        pasangan_aktif = pasangan[:index_pasangan + 1]
+        baru = []
+        for u_t, a_t in pasangan_aktif:
+            baru.append({"role": "user", "content": u_t})
+            if a_t:
+                baru.append({"role": "assistant", "content": a_t})
+        CHAT_HISTORY[chat_id] = baru
+        return pasangan[index_pasangan]
+    return None
+
 def hapus_satu_pasangan_riwayat(chat_id, index_pasangan):
     pasangan = ambil_pasangan_riwayat(chat_id)
     if 0 <= index_pasangan < len(pasangan):
@@ -175,43 +207,93 @@ def hapus_satu_pasangan_riwayat(chat_id, index_pasangan):
         return True
     return False
 
+def pulihkan_proyek_arsip(chat_id, idx_proj):
+    daftar_proj = SAVED_PROJECTS.get(chat_id, [])
+    if 0 <= idx_proj < len(daftar_proj):
+        # Jika ada chat aktif saat ini, tukar masuk ke arsip agar tidak hilang
+        if CHAT_HISTORY.get(chat_id):
+            arsipkan_sesi_ke_proyek(chat_id)
+            # Karena arsip bertambah di ujung, ambil proyek yang diminta dari posisi semula
+        proj = SAVED_PROJECTS[chat_id].pop(idx_proj)
+        CHAT_HISTORY[chat_id] = list(proj["messages"])
+        if proj.get("model") and (proj["model"] in KATALOG_MODEL or proj["model"] == "auto"):
+            USER_LOCKED_MODEL[chat_id] = proj["model"]
+        return proj
+    return None
+
+def hapus_proyek_arsip(chat_id, idx_proj):
+    daftar_proj = SAVED_PROJECTS.get(chat_id, [])
+    if 0 <= idx_proj < len(daftar_proj):
+        daftar_proj.pop(idx_proj)
+        return True
+    return False
+
 def teks_menu_history_str(chat_id):
     pasangan = ambil_pasangan_riwayat(chat_id)
-    if not pasangan:
+    daftar_proj = SAVED_PROJECTS.get(chat_id, [])
+
+    if not pasangan and not daftar_proj:
         return (
-            "📜 RIWAYAT PERCAKAPAN (CHAT HISTORY)\n"
+            "📜 RIWAYAT & PROYEK TERSIMPAN (HISTORY)\n"
             "─────────────────────────\n"
-            "📭 Belum ada riwayat percakapan yang tersimpan saat ini.\n\n"
-            "💡 Setiap kali kamu mengobrol dengan AI, percakapan akan otomatis tercatat di sini."
+            "📭 Belum ada riwayat percakapan atau proyek yang tersimpan.\n\n"
+            "💡 Setiap kali kamu mengobrol atau membuat kodingan dengan AI, riwayatnya otomatis tercatat di sini dan bisa dipilih kembali kapan saja."
         )
 
-    baris = [
-        f"📜 DAFTAR RIWAYAT PERCAKAPAN ({len(pasangan)} Interaksi)\n"
-        f"─────────────────────────"
-    ]
-    for idx, (u_t, a_t) in enumerate(pasangan):
-        u_clean = u_t.replace("\n", " ").strip()
-        a_clean = a_t.replace("\n", " ").strip()
-        u_short = u_clean[:45] + ("..." if len(u_clean) > 45 else "")
-        a_short = a_clean[:55] + ("..." if len(a_clean) > 55 else "")
-        baris.append(f"#{idx + 1}. 👤 Kamu: {u_short}\n    🤖 AI: {a_short}")
+    baris = ["📜 PUSAT RIWAYAT & LANJUTKAN PROYEK\n─────────────────────────"]
 
-    baris.append("─────────────────────────\n👇 Klik nomor riwayat di bawah yang ingin kamu hapus:")
+    if pasangan:
+        baris.append(f"🟢 SESI PROYEK AKTIF SAAT INI ({len(pasangan)} Langkah):")
+        for idx, (u_t, a_t) in enumerate(pasangan):
+            u_clean = u_t.replace("\n", " ").strip()
+            a_clean = a_t.replace("\n", " ").strip()
+            u_short = u_clean[:42] + ("..." if len(u_clean) > 42 else "")
+            a_short = a_clean[:50] + ("..." if len(a_clean) > 50 else "")
+            tanda_ujung = " 👈 [Posisi Aktif]" if idx == len(pasangan) - 1 else ""
+            baris.append(f"#{idx + 1}.{tanda_ujung}\n👤 Kamu: {u_short}\n🤖 AI: {a_short}")
+
+    if daftar_proj:
+        baris.append(f"─────────────────────────\n📁 ARSIP PROYEK SEBELUMNYA ({len(daftar_proj)} Proyek):")
+        for p_idx, proj in enumerate(daftar_proj):
+            jml_langkah = len(proj["messages"]) // 2
+            baris.append(f"📦 Proyek P{p_idx + 1}: {proj['title']} ({jml_langkah} chat - {proj['timestamp']})")
+
+    baris.append(
+        "─────────────────────────\n"
+        "💡 Cara Melanjutkan atau Menghapus:\n"
+        "• Klik ▶️ Lanjut — Memilih & membuka kembali riwayat/proyek tersebut untuk dilanjutkan.\n"
+        "• Klik 🗑️ Hapus — Menghapus riwayat yang dipilih."
+    )
     return "\n\n".join(baris)
 
 def buat_markup_history(chat_id):
     markup = InlineKeyboardMarkup(row_width=2)
     pasangan = ambil_pasangan_riwayat(chat_id)
+    daftar_proj = SAVED_PROJECTS.get(chat_id, [])
 
+    # Tombol Pilih Lanjutkan & Hapus untuk Sesi Aktif
     if pasangan:
-        tombol_hapus = []
         for idx, (u_t, _) in enumerate(pasangan):
-            cuplikan = u_t.replace("\n", " ").strip()[:12]
-            tombol_hapus.append(
-                InlineKeyboardButton(f"🗑️ Hapus #{idx + 1} ({cuplikan})", callback_data=f"delhist_{idx}")
+            cuplikan = u_t.replace("\n", " ").strip()[:14]
+            markup.row(
+                InlineKeyboardButton(f"▶️ Lanjut #{idx + 1} ({cuplikan})", callback_data=f"reshist_{idx}"),
+                InlineKeyboardButton(f"🗑️ Hapus #{idx + 1}", callback_data=f"delhist_{idx}")
             )
-        markup.add(*tombol_hapus)
-        markup.row(InlineKeyboardButton("🔥 Hapus Semua History", callback_data="clear_all_hist"))
+        markup.row(
+            InlineKeyboardButton("💾 Simpan Proyek & Mulai Topik Baru", callback_data="archive_new")
+        )
+
+    # Tombol Pilih Lanjutkan & Hapus untuk Arsip Proyek Lama
+    if daftar_proj:
+        for p_idx, proj in enumerate(daftar_proj):
+            judul_pendek = proj["title"][:14]
+            markup.row(
+                InlineKeyboardButton(f"📂 Buka Proyek P{p_idx + 1} ({judul_pendek})", callback_data=f"resproj_{p_idx}"),
+                InlineKeyboardButton(f"🗑️ Hapus P{p_idx + 1}", callback_data=f"delproj_{p_idx}")
+            )
+
+    if pasangan or daftar_proj:
+        markup.row(InlineKeyboardButton("🔥 Hapus Semua History & Arsip", callback_data="clear_all_hist"))
 
     markup.row(InlineKeyboardButton("🎛 Kembali ke Menu Utama Model", callback_data="back_main"))
     return markup
@@ -240,7 +322,7 @@ def catat_pesan_ui(chat_id, msg_obj):
     if msg_obj.message_id not in UI_HISTORY_MESSAGES[chat_id]:
         UI_HISTORY_MESSAGES[chat_id].append(msg_obj.message_id)
 
-# 2. Penyisir Model Otomatis (Routeva, BotKeep, OneKey, GonkaRouter, ZenMux, 9Router, Dahl, BestLLM, OpenRouter)
+# 2. Penyisir Model Otomatis
 ZENMUX_ACTIVE_BASE = ZENMUX_CANDIDATE_BASES[0]
 
 def sisir_endpoint_umum(base_url, api_key, defaults):
@@ -276,16 +358,7 @@ def sisir_endpoint_umum(base_url, api_key, defaults):
     return found
 
 def sisir_model_routeva():
-    defaults = [
-        "deepseek-r1",
-        "deepseek-v3",
-        "qwen-2.5-coder-32b-instruct",
-        "qwen-2.5-72b-instruct",
-        "claude-3-7-sonnet",
-        "gpt-4o",
-        "gpt-4o-mini",
-        "llama-3.3-70b-instruct"
-    ]
+    defaults = ["deepseek-r1", "deepseek-v3", "qwen-2.5-coder-32b-instruct", "qwen-2.5-72b-instruct", "claude-3-7-sonnet", "gpt-4o", "gpt-4o-mini", "llama-3.3-70b-instruct"]
     return sisir_endpoint_umum(ROUTEVA_BASE_URL, ROUTEVA_API_KEY, defaults)
 
 def sisir_model_botkeep():
@@ -370,7 +443,7 @@ def get_openrouter_models():
 
 OR_MODELS = get_openrouter_models() if OPENROUTER_KEY else ["openrouter/free"]
 
-# 3. Katalog Utama & Folder Sub-Kategori (Termasuk Routeva Tech)
+# 3. Katalog Utama & Folder Sub-Kategori
 KATALOG_MODEL = {
     "itera": {"provider": "itera", "model_id": "qwen/qwen3.8-27b", "nama": "Itera Qwen 3.8 27B (128K)", "tugas": "Koding, Tool Calling & Teks Panjang (IteraCompute)"},
     "vascoo": {"provider": "vascoo", "model_id": "uncensored-x", "nama": "Vascoo Uncensored-X", "tugas": "Teks & Roleplay Tanpa Sensor (Vascoo)"},
@@ -559,7 +632,8 @@ def buat_menu_utama(mode_aktif, chat_id=None):
     markup.add(*tombol_list)
 
     jml_hist = len(ambil_pasangan_riwayat(chat_id)) if chat_id else 0
-    markup.row(InlineKeyboardButton(f"📜 LIHAT & HAPUS HISTORY ({jml_hist} Chat)", callback_data="menu_history"))
+    jml_proj = len(SAVED_PROJECTS.get(chat_id, [])) if chat_id else 0
+    markup.row(InlineKeyboardButton(f"📜 RIWAYAT & LANJUTKAN PROYEK ({jml_hist} Chat | {jml_proj} Arsip)", callback_data="menu_history"))
     markup.row(InlineKeyboardButton("🔄 CEK ULANG STATUS SEMUA MODEL (PING)", callback_data="ping_all"))
     markup.row(InlineKeyboardButton(f"{'✅ ' if mode_aktif == 'auto' else '🤖 '}MODE OTOMATIS (Hanya Model 🟢)", callback_data="lock_auto"))
     return markup
@@ -616,7 +690,7 @@ def kunci_model_pilihan(chat_id, kode_pilihan):
         f"✅ Sekarang HANYA model ini yang melayani semua pesanmu."
     )
 
-# 6. Eksekutor Pesan Pengguna (Menggunakan call_ai_endpoint & format_messages_payload)
+# 6. Eksekutor Pesan Pengguna
 def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None, chat_id=None):
     info = KATALOG_MODEL.get(kode_model)
     if not info:
@@ -797,7 +871,7 @@ def teks_menu_utama_str(mode_sekarang):
         f"Keterangan Indikator Tombol:\n"
         f"• 🟢 = Model Aktif (Klik untuk mengunci 🔒)\n"
         f"• 🔴 = Model Mati (Klik untuk lihat alasan error)\n"
-        f"• 📜 = Lihat & pilih hapus riwayat percakapan\n"
+        f"• 📜 = Lihat, hapus, atau pilih lanjutkan proyek dari history\n"
         f"─────────────────────────\n"
         f"👇 Pilih Kategori atau Model di bawah ini:"
     )
@@ -834,12 +908,20 @@ def handle_view_history(message):
     )
     catat_pesan_ui(chat_id, msg)
 
-@bot.message_handler(commands=['reset', 'clear'])
+@bot.message_handler(commands=['reset', 'clear', 'new'])
 def handle_reset_history(message):
     chat_id = message.chat.id
-    CHAT_HISTORY[chat_id] = []
     bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
-    msg = bot.send_message(chat_id, "🧹 Seluruh riwayat percakapan telah dibersihkan! Memori konteks dimulai dari awal.")
+    diarsipkan = arsipkan_sesi_ke_proyek(chat_id)
+    if diarsipkan:
+        teks_info = (
+            "💾 Proyek sebelumnya telah disimpan ke dalam Arsip History!\n"
+            "🧹 Memori aktif sekarang sudah bersih untuk memulai topik/proyek baru.\n\n"
+            "💡 Ketik /history kapan saja jika ingin memilih dan melanjutkan kembali proyek yang lama."
+        )
+    else:
+        teks_info = "🧹 Memori percakapan sudah kosong dan siap untuk proyek baru."
+    msg = bot.send_message(chat_id, teks_info, reply_markup=buat_markup_history(chat_id))
     catat_pesan_ui(chat_id, msg)
 
 @bot.message_handler(commands=['model', 'cek'])
@@ -974,7 +1056,7 @@ def handle_cek_kuota(message):
 
     bot.edit_message_text(laporan[:4000], chat_id=chat_id, message_id=msg.message_id)
 
-# 9. Handler Klik Tombol (Termasuk Pemilihan & Penghapusan History)
+# 9. Handler Klik Tombol (Termasuk Pilih & Lanjutkan Proyek dari History)
 @bot.callback_query_handler(func=lambda call: True)
 def handle_semua_tombol(call):
     global ROUTEVA_MODELS, BOTKEEP_MODELS, ONEKEY_MODELS, GONKA_MODELS, ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
@@ -992,9 +1074,9 @@ def handle_semua_tombol(call):
     UI_HISTORY_MESSAGES[chat_id] = [msg_id]
 
     try:
-        # Navigasi Menu History & Hapus History Pilihan
+        # 1. Buka Menu History
         if data == "menu_history":
-            bot.answer_callback_query(call.id, "📜 Membuka daftar riwayat percakapan...")
+            bot.answer_callback_query(call.id, "📜 Membuka daftar riwayat & proyek...")
             bot.edit_message_text(
                 teks_menu_history_str(chat_id),
                 chat_id=chat_id,
@@ -1002,13 +1084,85 @@ def handle_semua_tombol(call):
                 reply_markup=buat_markup_history(chat_id)
             )
             return
+
+        # 2. Pilih & Lanjutkan Riwayat dari Titik Tertentu (reshist_)
+        elif data.startswith("reshist_"):
+            idx_pilih = int(data.replace("reshist_", ""))
+            pasangan_terpilih = lanjutkan_dari_titik_riwayat(chat_id, idx_pilih)
+            if pasangan_terpilih:
+                u_t, a_t = pasangan_terpilih
+                bot.answer_callback_query(call.id, f"▶️ Proyek #{idx_pilih + 1} diaktifkan untuk dilanjutkan!")
+                teks_resume = (
+                    f"▶️ PROYEK / RIWAYAT #{idx_pilih + 1} DIPILIH & DILANJUTKAN!\n"
+                    f"─────────────────────────\n"
+                    f"📌 Konteks percakapan telah dikembalikan ke titik ini:\n\n"
+                    f"👤 Instruksi Kamu Sebelumnya:\n{u_t[:600]}\n\n"
+                    f"🤖 Jawaban Terakhir AI:\n{a_t[:2200]}\n"
+                    f"─────────────────────────\n"
+                    f"✅ Silakan ketik instruksi lanjutanmu di bawah, AI akan langsung menyambung pekerjaan dari proyek ini!"
+                )
+                markup_lanjut = InlineKeyboardMarkup()
+                markup_lanjut.row(InlineKeyboardButton("📜 Kembali ke Daftar History", callback_data="menu_history"))
+                markup_lanjut.row(InlineKeyboardButton("🎛 Kembali ke Menu Model", callback_data="back_main"))
+                bot.edit_message_text(teks_resume[:4000], chat_id=chat_id, message_id=msg_id, reply_markup=markup_lanjut)
+            else:
+                bot.answer_callback_query(call.id, "⚠️ Riwayat tidak ditemukan.")
+            return
+
+        # 3. Buka & Lanjutkan Proyek dari Arsip (resproj_)
+        elif data.startswith("resproj_"):
+            idx_proj = int(data.replace("resproj_", ""))
+            proj = pulihkan_proyek_arsip(chat_id, idx_proj)
+            if proj:
+                pasangan_aktif = ambil_pasangan_riwayat(chat_id)
+                u_last, a_last = pasangan_aktif[-1] if pasangan_aktif else ("", "")
+                bot.answer_callback_query(call.id, f"📂 Proyek '{proj['title'][:15]}' berhasil dibuka kembali!")
+                teks_proj = (
+                    f"📂 PROYEK LAMA BERHASIL DIPULIHKAN!\n"
+                    f"─────────────────────────\n"
+                    f"🏷️ Nama Proyek : {proj['title']}\n"
+                    f"💬 Total Memori : {len(pasangan_aktif)} Interaksi\n\n"
+                    f"👤 Pesan Terakhir di Proyek Ini:\n{u_last[:500]}\n\n"
+                    f"🤖 Balasan Terakhir AI:\n{a_last[:2000]}\n"
+                    f"─────────────────────────\n"
+                    f"✅ Proyek ini sekarang menjadi aktif kembali. Silakan ketik pesan baru untuk melanjutkan proyek ini!"
+                )
+                markup_lanjut = InlineKeyboardMarkup()
+                markup_lanjut.row(InlineKeyboardButton("📜 Lihat Langkah History Proyek Ini", callback_data="menu_history"))
+                markup_lanjut.row(InlineKeyboardButton("🎛 Menu Utama Model", callback_data="back_main"))
+                bot.edit_message_text(teks_proj[:4000], chat_id=chat_id, message_id=msg_id, reply_markup=markup_lanjut)
+            else:
+                bot.answer_callback_query(call.id, "⚠️ Proyek arsip tidak ditemukan.")
+            return
+
+        # 4. Arsipkan Sesi Saat Ini & Mulai Proyek Baru
+        elif data == "archive_new":
+            arsipkan_sesi_ke_proyek(chat_id)
+            bot.answer_callback_query(call.id, "💾 Proyek disimpan ke Arsip! Siap mulai topik baru.")
+            bot.edit_message_text(
+                teks_menu_history_str(chat_id),
+                chat_id=chat_id,
+                message_id=msg_id,
+                reply_markup=buat_markup_history(chat_id)
+            )
+            return
+
+        # 5. Hapus Satu Langkah History atau Satu Proyek Arsip
         elif data.startswith("delhist_"):
             idx_hapus = int(data.replace("delhist_", ""))
-            berhasil = hapus_satu_pasangan_riwayat(chat_id, idx_hapus)
-            if berhasil:
-                bot.answer_callback_query(call.id, f"🗑️ Riwayat #{idx_hapus + 1} berhasil dihapus!")
-            else:
-                bot.answer_callback_query(call.id, "⚠️ Riwayat sudah tidak ada.")
+            if hapus_satu_pasangan_riwayat(chat_id, idx_hapus):
+                bot.answer_callback_query(call.id, f"🗑️ Riwayat #{idx_hapus + 1} dihapus!")
+            bot.edit_message_text(
+                teks_menu_history_str(chat_id),
+                chat_id=chat_id,
+                message_id=msg_id,
+                reply_markup=buat_markup_history(chat_id)
+            )
+            return
+        elif data.startswith("delproj_"):
+            idx_proj = int(data.replace("delproj_", ""))
+            if hapus_proyek_arsip(chat_id, idx_proj):
+                bot.answer_callback_query(call.id, f"🗑️ Arsip Proyek P{idx_proj + 1} dihapus!")
             bot.edit_message_text(
                 teks_menu_history_str(chat_id),
                 chat_id=chat_id,
@@ -1018,7 +1172,8 @@ def handle_semua_tombol(call):
             return
         elif data == "clear_all_hist":
             CHAT_HISTORY[chat_id] = []
-            bot.answer_callback_query(call.id, "🔥 Seluruh riwayat percakapan berhasil dihapus!")
+            SAVED_PROJECTS[chat_id] = []
+            bot.answer_callback_query(call.id, "🔥 Seluruh riwayat & arsip proyek berhasil dihapus!")
             bot.edit_message_text(
                 teks_menu_history_str(chat_id),
                 chat_id=chat_id,
@@ -1218,13 +1373,12 @@ def handle_start(message):
     ket_mode = "OTOMATIS" if mode == "auto" else f"TERKUNCI PADA [{KATALOG_MODEL.get(mode, {}).get('nama', mode)}]"
     msg = bot.send_message(
         chat_id,
-        f"🤖 Bot Multi-Model dengan Pengelola History & Status (🟢/🔴) Siap!\n"
+        f"🤖 Bot Multi-Model dengan Pengelola Proyek History & Status (🟢/🔴) Siap!\n"
         f"🔒 Mode Aktif: {ket_mode}\n\n"
         f"📌 Perintah Utama:\n"
         f"• /model — Cek status 🟢 Aktif / 🔴 Mati semua model & buka Folder Kategori.\n"
-        f"• /model routeva — Langsung membuka folder model Routeva Tech.\n"
-        f"• /history — Lihat daftar riwayat percakapan & pilih history yang mau dihapus.\n"
-        f"• /reset — Hapus seluruh memori riwayat percakapan sekaligus.\n"
+        f"• /history — Lihat riwayat, pilih proyek lama untuk dilanjutkan (▶️ Lanjut), atau hapus riwayat.\n"
+        f"• /reset — Simpan proyek saat ini ke arsip & mulai proyek baru.\n"
         f"• /kuota — Lihat laporan kesehatan tiap server & penyebab error."
     )
     catat_pesan_ui(chat_id, msg)
