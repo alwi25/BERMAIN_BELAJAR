@@ -35,6 +35,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
+          ORCA_API_KEY: ${{ secrets.ORCA_API_KEY }}
           MASB_API_KEY: ${{ secrets.MASB_API_KEY }}
           ROUTEVA_API_KEY: ${{ secrets.ROUTEVA_API_KEY }}
           BOTKEEP_API_KEY: ${{ secrets.BOTKEEP_API_KEY }}
