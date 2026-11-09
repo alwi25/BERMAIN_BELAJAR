@@ -1,6 +1,8 @@
 import os
 import time
 import re
+import html
+import io
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import telebot
 from telebot import apihelper
@@ -37,21 +39,21 @@ if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN kosong! Harap isi di GitHub Secrets.")
 
 # Daftar Base URL Server
-ROUTEVA_BASE_URL = "https://api.routeva.tech/v1"
-BOTKEEP_BASE_URL = "http://node18.botkeep.cloud:61172/v1"
-ONEKEY_BASE_URL = "https://api.onekeyllmapi.com/v1"
-GONKA_BASE_URL = "https://api.gonkarouter.io/v1"
-ITERA_BASE_URL = "https://api.iteracompute.com/v1"
-VASCOO_BASE_URL = "https://api.vascoo.my.id/v1"
-OPENAI_BASE_URL = "https://api.openai.com/v1"
-ZENMUX_CANDIDATE_BASES = ["https://api.zenmux.ai/v1", "https://zenmux.ai/api/v1", "https://zenmux.ai/v1"]
-TER_BASE_URL = "https://ter.biz.id/v1"
-DAHL_BASE_URL = "https://inference.dahl.global/v1"
-BEST_BASE_URL = "https://api.bestllmapi.com/v1"
-INDO_BASE_URL = "https://indosmartrouter.cloud/v1"
-BEJO_BASE_URL = "https://bejoxxx.tech/v1"
-NOCTA_BASE_URL = "https://nocta-digital.web.id/v1"
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+ROUTEVA_BASE_URL = "[https://api.routeva.tech/v1](https://api.routeva.tech/v1)"
+BOTKEEP_BASE_URL = "[http://node18.botkeep.cloud:61172/v1](http://node18.botkeep.cloud:61172/v1)"
+ONEKEY_BASE_URL = "[https://api.onekeyllmapi.com/v1](https://api.onekeyllmapi.com/v1)"
+GONKA_BASE_URL = "[https://api.gonkarouter.io/v1](https://api.gonkarouter.io/v1)"
+ITERA_BASE_URL = "[https://api.iteracompute.com/v1](https://api.iteracompute.com/v1)"
+VASCOO_BASE_URL = "[https://api.vascoo.my.id/v1](https://api.vascoo.my.id/v1)"
+OPENAI_BASE_URL = "[https://api.openai.com/v1](https://api.openai.com/v1)"
+ZENMUX_CANDIDATE_BASES = ["[https://api.zenmux.ai/v1](https://api.zenmux.ai/v1)", "[https://zenmux.ai/api/v1](https://zenmux.ai/api/v1)", "[https://zenmux.ai/v1](https://zenmux.ai/v1)"]
+TER_BASE_URL = "[https://ter.biz.id/v1](https://ter.biz.id/v1)"
+DAHL_BASE_URL = "[https://inference.dahl.global/v1](https://inference.dahl.global/v1)"
+BEST_BASE_URL = "[https://api.bestllmapi.com/v1](https://api.bestllmapi.com/v1)"
+INDO_BASE_URL = "[https://indosmartrouter.cloud/v1](https://indosmartrouter.cloud/v1)"
+BEJO_BASE_URL = "[https://bejoxxx.tech/v1](https://bejoxxx.tech/v1)"
+NOCTA_BASE_URL = "[https://nocta-digital.web.id/v1](https://nocta-digital.web.id/v1)"
+OPENROUTER_BASE_URL = "[https://openrouter.ai/api/v1](https://openrouter.ai/api/v1)"
 
 gemini_client = None
 if GEMINI_API_KEY:
@@ -63,7 +65,7 @@ if GEMINI_API_KEY:
 use_proxy = False
 if PROXY_URL:
     try:
-        test = requests.get("https://api.telegram.org", proxies={"http": PROXY_URL, "https": PROXY_URL}, timeout=8)
+        test = requests.get("[https://api.telegram.org](https://api.telegram.org)", proxies={"http": PROXY_URL, "https": PROXY_URL}, timeout=8)
         if test.status_code == 200:
             use_proxy = True
             apihelper.proxy = {'http': PROXY_URL, 'https': PROXY_URL}
@@ -75,12 +77,169 @@ USER_LOCKED_MODEL = {}
 WAITING_MODEL_CHOICE = {}
 UI_HISTORY_MESSAGES = {}
 
-# Penyimpanan Riwayat Aktif & Arsip Proyek (Agar Proyek Lama Bisa Dipilih & Dilanjutkan Kembali)
+# Penyimpanan Riwayat Aktif, Arsip Proyek, & Cache Source Code Terakhir
 CHAT_HISTORY = {}
 SAVED_PROJECTS = {}
+LAST_CODE_BLOCKS = {}
 
 MODEL_HEALTH_CACHE = {}
 LAST_HEALTH_CHECK = 0
+
+# =========================================================================
+# FUNGSI EKSTRAKSI & RENDER SOURCE CODE (SALIN 1-KLIK SEPERTI GEMINI)
+# =========================================================================
+def ekstrak_blok_kode(teks):
+    """Mengekstrak semua blok source code ```bahasa ... ``` dari jawaban AI."""
+    pola = re.compile(r"```([a-zA-Z0-9_+-]*)\n?(.*?)```", re.DOTALL)
+    hasil = []
+    for match in pola.finditer(teks):
+        bahasa = (match.group(1) or "python").strip().lower()
+        isi_kode = match.group(2).strip()
+        if isi_kode:
+            hasil.append({"lang": bahasa, "code": isi_kode})
+    return hasil
+
+def tentukan_ekstensi_file(bahasa, isi_kode=""):
+    peta_eks = {
+        "python": "py", "py": "py",
+        "yaml": "yml", "yml": "yml",
+        "javascript": "js", "js": "js",
+        "typescript": "ts", "ts": "ts",
+        "html": "html", "css": "css",
+        "json": "json", "bash": "sh", "sh": "sh", "shell": "sh",
+        "php": "php", "sql": "sql", "cpp": "cpp", "c": "c",
+        "java": "java", "go": "go", "rust": "rs", "xml": "xml"
+    }
+    if bahasa in peta_eks:
+        return peta_eks[bahasa]
+    if "import " in isi_kode or "def " in isi_kode:
+        return "py"
+    if "runs-on:" in isi_kode or "steps:" in isi_kode:
+        return "yml"
+    return "txt"
+
+def format_ke_html_telegram(teks):
+    """
+    Mengubah Markdown ```kode``` menjadi tag <pre><code class="language-...">
+    agar Telegram memunculkan tombol Copy/Salin 1-Klik persis seperti Google Gemini.
+    """
+    pola_blok = re.compile(r"```([a-zA-Z0-9_+-]*)\n?(.*?)```", re.DOTALL)
+    hasil_akhir = []
+    posisi_terakhir = 0
+
+    for match in pola_blok.finditer(teks):
+        teks_sebelum = teks[posisi_terakhir:match.start()]
+        hasil_akhir.append(format_teks_biasa_html(teks_sebelum))
+
+        bahasa = (match.group(1) or "python").strip().lower()
+        kode_mentah = match.group(2).strip("\n")
+        kode_aman = html.escape(kode_mentah)
+        hasil_akhir.append(f'<pre><code class="language-{bahasa}">{kode_aman}</code></pre>')
+        posisi_terakhir = match.end()
+
+    hasil_akhir.append(format_teks_biasa_html(teks[posisi_terakhir:]))
+    return "".join(hasil_akhir)
+
+def format_teks_biasa_html(teks_potong):
+    if not teks_potong:
+        return ""
+    pola_inline = re.compile(r"`([^`\n]+)`")
+    bagian = []
+    pos = 0
+    for m in pola_inline.finditer(teks_potong):
+        normal = html.escape(teks_potong[pos:m.start()])
+        normal = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", normal)
+        bagian.append(normal)
+        bagian.append(f"<code>{html.escape(m.group(1))}</code>")
+        pos = m.end()
+    sisa = html.escape(teks_potong[pos:])
+    sisa = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", sisa)
+    bagian.append(sisa)
+    return "".join(bagian)
+
+def pecah_pesan_aman_kode(teks_asli, batas=3500):
+    """
+    Memecah pesan panjang tanpa merusak blok ```kode```.
+    Jika blok kode terpotong di tengah, otomatis ditutup dengan ``` dan dibuka kembali di pesan berikutnya.
+    """
+    if len(teks_asli) <= batas:
+        return [teks_asli]
+
+    baris_list = teks_asli.split("\n")
+    potongan_pesan = []
+    buffer_baris = []
+    panjang_sekarang = 0
+    di_dalam_kode = False
+    bahasa_aktif = "python"
+
+    for baris in baris_list:
+        tambahan_len = len(baris) + 1
+        if panjang_sekarang + tambahan_len > batas and buffer_baris:
+            if di_dalam_kode:
+                buffer_baris.append("```")
+                potongan_pesan.append("\n".join(buffer_baris))
+                buffer_baris = [f"```{bahasa_aktif}"]
+                panjang_sekarang = len(buffer_baris[0]) + 1
+            else:
+                potongan_pesan.append("\n".join(buffer_baris))
+                buffer_baris = []
+                panjang_sekarang = 0
+
+        stripped = baris.strip()
+        if stripped.startswith("```"):
+            if not di_dalam_kode:
+                di_dalam_kode = True
+                lang_tag = stripped[3:].strip()
+                bahasa_aktif = lang_tag if lang_tag else "python"
+            else:
+                di_dalam_kode = False
+
+        buffer_baris.append(baris)
+        panjang_sekarang += tambahan_len
+
+    if buffer_baris:
+        if di_dalam_kode:
+            buffer_baris.append("```")
+        potongan_pesan.append("\n".join(buffer_baris))
+
+    return potongan_pesan
+
+def buat_tombol_salin_kode(chat_id, daftar_blok):
+    if not daftar_blok:
+        return None
+    LAST_CODE_BLOCKS[chat_id] = daftar_blok
+    markup = InlineKeyboardMarkup(row_width=1)
+    jml = len(daftar_blok)
+    markup.add(
+        InlineKeyboardButton(
+            f"📋 Tampilkan Hanya Source Code ({jml} Blok - Salin 1-Klik)",
+            callback_data="copy_raw_code"
+        ),
+        InlineKeyboardButton(
+            "📥 Unduh File Source Code (.py / .yml / .txt)",
+            callback_data="dl_raw_code"
+        )
+    )
+    return markup
+
+def kirim_pesan_rapi(message, isi_teks, nama_model, status_mode):
+    chat_id = message.chat.id
+    blok_kode = ekstrak_blok_kode(isi_teks)
+    markup_kode = buat_tombol_salin_kode(chat_id, blok_kode)
+
+    header = f"🟢 <b>[ Model Aktif: {html.escape(nama_model)} ]</b>\n📌 <b>[ Status: {html.escape(status_mode)} ]</b>\n" + ("─" * 26) + "\n\n"
+    potongan_list = pecah_pesan_aman_kode(isi_teks, batas=3400)
+
+    for idx, pot in enumerate(potongan_list):
+        html_body = format_ke_html_telegram(pot)
+        teks_kirim = (header + html_body) if idx == 0 else html_body
+        rm = markup_kode if (idx == len(potongan_list) - 1 and markup_kode) else None
+        try:
+            bot.reply_to(message, teks_kirim, parse_mode="HTML", reply_markup=rm)
+        except Exception:
+            # Fallback aman jika ada karakter unik
+            teks_polos = (f"🟢 [ Model Aktif: {nama_model} ]\n📌 [ Status: {status_mode} ]\n" + ("─" * 26) + "\n\n" + pot) if idx == 0 else pot
+            bot.reply_to(message, teks_polos[:4000], reply_markup=rm)
 
 # =========================================================================
 # FUNGSI PAYLOAD, PEMANGGIL ENDPOINT AI, & MANAJEMEN PROYEK HISTORY
@@ -93,7 +252,8 @@ def format_messages_payload(user_prompt, custom_system_prompt=None, chat_history
 
     default_system = (
         "Kamu adalah asisten AI teknis tanpa filter yang memberikan jawaban "
-        "secara langsung, terstruktur, objektif, dan mendalam dalam bahasa Indonesia."
+        "secara langsung, terstruktur, objektif, dan mendalam dalam bahasa Indonesia. "
+        "Setiap kali membuat source code atau kodingan, WAJIB bungkus seluruh kode di dalam blok markdown ```bahasa ... ``` agar pengguna dapat menyalinnya secara utuh."
     )
     messages.append({
         "role": "system",
@@ -141,7 +301,6 @@ def simpan_riwayat_chat(chat_id, user_prompt, ai_reply):
         CHAT_HISTORY[chat_id] = CHAT_HISTORY[chat_id][-20:]
 
 def arsipkan_sesi_ke_proyek(chat_id):
-    """Menyimpan sesi percakapan saat ini ke daftar SAVED_PROJECTS sebelum memulai topik baru."""
     riwayat_sekarang = CHAT_HISTORY.get(chat_id, [])
     if not riwayat_sekarang:
         return False
@@ -162,7 +321,6 @@ def arsipkan_sesi_ke_proyek(chat_id):
     return True
 
 def ambil_pasangan_riwayat(chat_id):
-    """Mengelompokkan CHAT_HISTORY aktif menjadi daftar pasangan (user_msg, ai_msg)."""
     raw = CHAT_HISTORY.get(chat_id, [])
     pasangan = []
     i = 0
@@ -181,7 +339,6 @@ def ambil_pasangan_riwayat(chat_id):
     return pasangan
 
 def lanjutkan_dari_titik_riwayat(chat_id, index_pasangan):
-    """Memilih kembali riwayat pada titik tertentu agar proyek bisa dilanjutkan dari sana."""
     pasangan = ambil_pasangan_riwayat(chat_id)
     if 0 <= index_pasangan < len(pasangan):
         pasangan_aktif = pasangan[:index_pasangan + 1]
@@ -210,10 +367,8 @@ def hapus_satu_pasangan_riwayat(chat_id, index_pasangan):
 def pulihkan_proyek_arsip(chat_id, idx_proj):
     daftar_proj = SAVED_PROJECTS.get(chat_id, [])
     if 0 <= idx_proj < len(daftar_proj):
-        # Jika ada chat aktif saat ini, tukar masuk ke arsip agar tidak hilang
         if CHAT_HISTORY.get(chat_id):
             arsipkan_sesi_ke_proyek(chat_id)
-            # Karena arsip bertambah di ujung, ambil proyek yang diminta dari posisi semula
         proj = SAVED_PROJECTS[chat_id].pop(idx_proj)
         CHAT_HISTORY[chat_id] = list(proj["messages"])
         if proj.get("model") and (proj["model"] in KATALOG_MODEL or proj["model"] == "auto"):
@@ -271,7 +426,6 @@ def buat_markup_history(chat_id):
     pasangan = ambil_pasangan_riwayat(chat_id)
     daftar_proj = SAVED_PROJECTS.get(chat_id, [])
 
-    # Tombol Pilih Lanjutkan & Hapus untuk Sesi Aktif
     if pasangan:
         for idx, (u_t, _) in enumerate(pasangan):
             cuplikan = u_t.replace("\n", " ").strip()[:14]
@@ -283,7 +437,6 @@ def buat_markup_history(chat_id):
             InlineKeyboardButton("💾 Simpan Proyek & Mulai Topik Baru", callback_data="archive_new")
         )
 
-    # Tombol Pilih Lanjutkan & Hapus untuk Arsip Proyek Lama
     if daftar_proj:
         for p_idx, proj in enumerate(daftar_proj):
             judul_pendek = proj["title"][:14]
@@ -298,7 +451,6 @@ def buat_markup_history(chat_id):
     markup.row(InlineKeyboardButton("🎛 Kembali ke Menu Utama Model", callback_data="back_main"))
     return markup
 
-# Fungsi Pembersih Pesan Instruksi/Menu Sebelumnya Agar Tidak Menumpuk
 def bersihkan_instruksi_sebelumnya(chat_id, user_msg_id=None):
     if user_msg_id:
         try:
@@ -847,15 +999,6 @@ def kerjakan_video(message, teks_user):
     else:
         bot.reply_to(message, "🔴 Gagal menyusun skenario video karena model teks sedang tidak aktif.")
 
-def kirim_pesan_rapi(message, isi_teks, nama_model, status_mode):
-    header = f"🟢 [ Model Aktif: {nama_model} ]\n📌 [ Status: {status_mode} ]\n" + ("─" * 26) + "\n\n"
-    full_text = header + isi_teks
-    if len(full_text) <= 4000:
-        bot.reply_to(message, full_text)
-    else:
-        for i in range(0, len(full_text), 4000):
-            bot.reply_to(message, full_text[i:i+4000])
-
 # 7. Teks Menu dengan Informasi Diagnostik Lengkap
 def teks_menu_utama_str(mode_sekarang):
     info = "OTOMATIS (Hanya Model 🟢)" if mode_sekarang == "auto" else KATALOG_MODEL.get(mode_sekarang, {}).get("nama", "Unknown")
@@ -1056,7 +1199,7 @@ def handle_cek_kuota(message):
 
     bot.edit_message_text(laporan[:4000], chat_id=chat_id, message_id=msg.message_id)
 
-# 9. Handler Klik Tombol (Termasuk Pilih & Lanjutkan Proyek dari History)
+# 9. Handler Klik Tombol (Termasuk Salin Source Code 1-Klik & Unduh File)
 @bot.callback_query_handler(func=lambda call: True)
 def handle_semua_tombol(call):
     global ROUTEVA_MODELS, BOTKEEP_MODELS, ONEKEY_MODELS, GONKA_MODELS, ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
@@ -1064,16 +1207,62 @@ def handle_semua_tombol(call):
     msg_id = call.message.message_id
     mode_sekarang = USER_LOCKED_MODEL.get(chat_id, "auto")
 
-    daftar_ui = UI_HISTORY_MESSAGES.get(chat_id, [])
-    for old_id in list(daftar_ui):
-        if old_id != msg_id:
-            try:
-                bot.delete_message(chat_id, old_id)
-            except Exception:
-                pass
-    UI_HISTORY_MESSAGES[chat_id] = [msg_id]
-
     try:
+        # A. FITUR SALIN SOURCE CODE UTUH 1-KLIK (SEPERTI GEMINI)
+        if data == "copy_raw_code":
+            daftar_blok = LAST_CODE_BLOCKS.get(chat_id, [])
+            if not daftar_blok:
+                bot.answer_callback_query(call.id, "⚠️ Tidak ada source code terakhir yang tersimpan.", show_alert=True)
+                return
+            bot.answer_callback_query(call.id, "📋 Menampilkan Source Code Utuh (Klik tombol Copy di pojok kotak kode)!")
+            for idx, b in enumerate(daftar_blok):
+                bahasa = b["lang"]
+                kode_mentah = b["code"]
+                judul_blok = f"📋 <b>SOURCE CODE #{idx + 1} ({bahasa.upper()}) — Ketuk kotak di bawah untuk Salin Utuh:</b>\n\n"
+                if len(kode_mentah) <= 3700:
+                    html_kode = f'{judul_blok}<pre><code class="language-{bahasa}">{html.escape(kode_mentah)}</code></pre>'
+                    bot.send_message(chat_id, html_kode, parse_mode="HTML")
+                else:
+                    # Jika kodingan lebih dari 4000 karakter, kirimkan juga sebagai file utuh agar 100% tidak terpotong
+                    eks = tentukan_ekstensi_file(bahasa, kode_mentah)
+                    nama_file = f"source_code_{idx + 1}.{eks}"
+                    bio = io.BytesIO(kode_mentah.encode("utf-8"))
+                    bio.name = nama_file
+                    bot.send_document(
+                        chat_id,
+                        bio,
+                        caption=f"📄 Karena Source Code #{idx + 1} sangat panjang ({len(kode_mentah)} karakter), kode dikirimkan utuh sebagai file '{nama_file}' sekaligus kotak salin di bawah:"
+                    )
+                    potongan_k = pecah_pesan_aman_kode(f"```{bahasa}\n{kode_mentah}\n```", batas=3600)
+                    for p_i, pot_k in enumerate(potongan_k):
+                        bot.send_message(chat_id, f"<b>Bagian {p_i + 1}/{len(potongan_k)}:</b>\n" + format_ke_html_telegram(pot_k), parse_mode="HTML")
+            return
+
+        # B. FITUR UNDUH FILE SOURCE CODE LANGSUNG
+        elif data == "dl_raw_code":
+            daftar_blok = LAST_CODE_BLOCKS.get(chat_id, [])
+            if not daftar_blok:
+                bot.answer_callback_query(call.id, "⚠️ Tidak ada source code terakhir yang tersimpan.", show_alert=True)
+                return
+            bot.answer_callback_query(call.id, "📥 Mengirimkan file source code...")
+            for idx, b in enumerate(daftar_blok):
+                eks = tentukan_ekstensi_file(b["lang"], b["code"])
+                nama_file = f"source_code_{idx + 1}.{eks}"
+                bio = io.BytesIO(b["code"].encode("utf-8"))
+                bio.name = nama_file
+                bot.send_document(chat_id, bio, caption=f"📥 File Source Code #{idx + 1} ({nama_file}) siap digunakan.")
+            return
+
+        # Bersihkan UI lama hanya untuk navigasi menu kontrol
+        daftar_ui = UI_HISTORY_MESSAGES.get(chat_id, [])
+        for old_id in list(daftar_ui):
+            if old_id != msg_id:
+                try:
+                    bot.delete_message(chat_id, old_id)
+                except Exception:
+                    pass
+        UI_HISTORY_MESSAGES[chat_id] = [msg_id]
+
         # 1. Buka Menu History
         if data == "menu_history":
             bot.answer_callback_query(call.id, "📜 Membuka daftar riwayat & proyek...")
@@ -1091,20 +1280,33 @@ def handle_semua_tombol(call):
             pasangan_terpilih = lanjutkan_dari_titik_riwayat(chat_id, idx_pilih)
             if pasangan_terpilih:
                 u_t, a_t = pasangan_terpilih
+                blok_tersimpan = ekstrak_blok_kode(a_t)
+                if blok_tersimpan:
+                    LAST_CODE_BLOCKS[chat_id] = blok_tersimpan
                 bot.answer_callback_query(call.id, f"▶️ Proyek #{idx_pilih + 1} diaktifkan untuk dilanjutkan!")
                 teks_resume = (
-                    f"▶️ PROYEK / RIWAYAT #{idx_pilih + 1} DIPILIH & DILANJUTKAN!\n"
+                    f"▶️ <b>PROYEK / RIWAYAT #{idx_pilih + 1} DIPILIH & DILANJUTKAN!</b>\n"
                     f"─────────────────────────\n"
-                    f"📌 Konteks percakapan telah dikembalikan ke titik ini:\n\n"
-                    f"👤 Instruksi Kamu Sebelumnya:\n{u_t[:600]}\n\n"
-                    f"🤖 Jawaban Terakhir AI:\n{a_t[:2200]}\n"
+                    f"👤 <b>Instruksi Kamu Sebelumnya:</b>\n{html.escape(u_t[:400])}\n\n"
+                    f"🤖 <b>Jawaban / Kodingan Terakhir AI:</b>\n{format_ke_html_telegram(a_t[:2600])}\n"
                     f"─────────────────────────\n"
-                    f"✅ Silakan ketik instruksi lanjutanmu di bawah, AI akan langsung menyambung pekerjaan dari proyek ini!"
+                    f"✅ <b>Silakan ketik instruksi lanjutanmu di bawah, AI akan langsung menyambung pekerjaan dari proyek ini!</b>"
                 )
                 markup_lanjut = InlineKeyboardMarkup()
+                if blok_tersimpan:
+                    markup_lanjut.row(InlineKeyboardButton(f"📋 Salin Source Code Proyek Ini ({len(blok_tersimpan)} Blok)", callback_data="copy_raw_code"))
+                    markup_lanjut.row(InlineKeyboardButton("📥 Unduh File Source Code Proyek Ini", callback_data="dl_raw_code"))
                 markup_lanjut.row(InlineKeyboardButton("📜 Kembali ke Daftar History", callback_data="menu_history"))
                 markup_lanjut.row(InlineKeyboardButton("🎛 Kembali ke Menu Model", callback_data="back_main"))
-                bot.edit_message_text(teks_resume[:4000], chat_id=chat_id, message_id=msg_id, reply_markup=markup_lanjut)
+                try:
+                    bot.edit_message_text(teks_resume[:4000], chat_id=chat_id, message_id=msg_id, parse_mode="HTML", reply_markup=markup_lanjut)
+                except Exception:
+                    bot.edit_message_text(
+                        f"▶️ PROYEK #{idx_pilih + 1} DILANJUTKAN!\n\n👤 Kamu:\n{u_t[:400]}\n\n🤖 AI:\n{a_t[:2600]}",
+                        chat_id=chat_id,
+                        message_id=msg_id,
+                        reply_markup=markup_lanjut
+                    )
             else:
                 bot.answer_callback_query(call.id, "⚠️ Riwayat tidak ditemukan.")
             return
@@ -1116,6 +1318,9 @@ def handle_semua_tombol(call):
             if proj:
                 pasangan_aktif = ambil_pasangan_riwayat(chat_id)
                 u_last, a_last = pasangan_aktif[-1] if pasangan_aktif else ("", "")
+                blok_tersimpan = ekstrak_blok_kode(a_last)
+                if blok_tersimpan:
+                    LAST_CODE_BLOCKS[chat_id] = blok_tersimpan
                 bot.answer_callback_query(call.id, f"📂 Proyek '{proj['title'][:15]}' berhasil dibuka kembali!")
                 teks_proj = (
                     f"📂 PROYEK LAMA BERHASIL DIPULIHKAN!\n"
@@ -1128,6 +1333,9 @@ def handle_semua_tombol(call):
                     f"✅ Proyek ini sekarang menjadi aktif kembali. Silakan ketik pesan baru untuk melanjutkan proyek ini!"
                 )
                 markup_lanjut = InlineKeyboardMarkup()
+                if blok_tersimpan:
+                    markup_lanjut.row(InlineKeyboardButton(f"📋 Salin Source Code Proyek Ini ({len(blok_tersimpan)} Blok)", callback_data="copy_raw_code"))
+                    markup_lanjut.row(InlineKeyboardButton("📥 Unduh File Source Code Proyek Ini", callback_data="dl_raw_code"))
                 markup_lanjut.row(InlineKeyboardButton("📜 Lihat Langkah History Proyek Ini", callback_data="menu_history"))
                 markup_lanjut.row(InlineKeyboardButton("🎛 Menu Utama Model", callback_data="back_main"))
                 bot.edit_message_text(teks_proj[:4000], chat_id=chat_id, message_id=msg_id, reply_markup=markup_lanjut)
@@ -1373,7 +1581,7 @@ def handle_start(message):
     ket_mode = "OTOMATIS" if mode == "auto" else f"TERKUNCI PADA [{KATALOG_MODEL.get(mode, {}).get('nama', mode)}]"
     msg = bot.send_message(
         chat_id,
-        f"🤖 Bot Multi-Model dengan Pengelola Proyek History & Status (🟢/🔴) Siap!\n"
+        f"🤖 Bot Multi-Model dengan Salin Source Code 1-Klik & Pengelola Proyek Siap!\n"
         f"🔒 Mode Aktif: {ket_mode}\n\n"
         f"📌 Perintah Utama:\n"
         f"• /model — Cek status 🟢 Aktif / 🔴 Mati semua model & buka Folder Kategori.\n"
