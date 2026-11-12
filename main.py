@@ -455,7 +455,7 @@ def catat_pesan_ui(chat_id, msg_obj):
     if msg_obj.message_id not in UI_HISTORY_MESSAGES[chat_id]:
         UI_HISTORY_MESSAGES[chat_id].append(msg_obj.message_id)
 
-# 2. Penyisir Model Otomatis (TipRouter, OrcaRouter, Masb, Routeva, BotKeep, OneKey, Gonka, ZenMux, 9Router, Dahl)
+# 2. Penyisir Model Otomatis
 ZENMUX_ACTIVE_BASE = ZENMUX_CANDIDATE_BASES[0]
 
 def sisir_endpoint_umum(base_url, api_key, defaults):
@@ -490,39 +490,19 @@ def sisir_endpoint_umum(base_url, api_key, defaults):
             found.append(d)
     return found
 
+def sisir_model_indo():
+    defaults = ["qwen3-14b-abliterated", "qwen-uncensored", "deepseek-r1", "deepseek-v3"]
+    return sisir_endpoint_umum(INDO_BASE_URL, INDO_API_KEY, defaults)
+
 def sisir_model_tip():
-    # Seluruh 28+ model unggulan TipRouter dari tangkapan layar Anda
     defaults = [
-        "qwen3.8-flash-uncen",
-        "qwen-3.8-27b",
-        "qwen3.8-omni-flash",
-        "qwen3.8-flash",
-        "gpt-6-luna",
-        "deepseek-v4.1-flash-1017",
-        "deepseek-v-4.1-flash-1017",
-        "deepseek-v4-flash-0731",
-        "gemini-3.8-flash",
-        "hy4-preview",
-        "hy3",
-        "glm-5.3",
-        "glm-5-3-flash",
-        "mimo-v2.6.flash",
-        "mimo-v2.5",
-        "muse-spark-1.3",
-        "solar-pro4",
-        "solar-mini4",
-        "nemotron-3.5-super",
-        "beam",
-        "longcat-2.5-preview",
-        "atria-dawn",
-        "kimi-k2.6",
-        "mercury-3",
-        "step-5-preview",
-        "step-3.7-flash",
-        "minimax-m3.1-flash",
-        "laguna-s-2.1",
-        "dots-3-note-preview",
-        "S5"
+        "qwen3.8-flash-uncen", "qwen-3.8-27b", "qwen3.8-omni-flash", "qwen3.8-flash",
+        "gpt-6-luna", "deepseek-v4.1-flash-1017", "deepseek-v-4.1-flash-1017", "deepseek-v4-flash-0731",
+        "gemini-3.8-flash", "hy4-preview", "hy3", "glm-5.3", "glm-5-3-flash",
+        "mimo-v2.6.flash", "mimo-v2.5", "muse-spark-1.3", "solar-pro4", "solar-mini4",
+        "nemotron-3.5-super", "beam", "longcat-2.5-preview", "atria-dawn", "kimi-k2.6",
+        "mercury-3", "step-5-preview", "step-3.7-flash", "minimax-m3.1-flash", "laguna-s-2.1",
+        "dots-3-note-preview", "S5"
     ]
     return sisir_endpoint_umum(TIP_BASE_URL, TIP_API_KEY, defaults)
 
@@ -586,6 +566,7 @@ def sisir_model_dahl():
     defaults = ["qwen-3.8-flash", "minimax", "llama-3.1-70b", "deepseek-coder"]
     return sisir_endpoint_umum(DAHL_BASE_URL, DAHL_API_KEY, defaults)
 
+INDO_MODELS = sisir_model_indo()
 TIP_MODELS = sisir_model_tip()
 ORCA_MODELS = sisir_model_orca()
 MASB_MODELS = sisir_model_masb()
@@ -628,7 +609,6 @@ KATALOG_MODEL = {
     "itera": {"provider": "itera", "model_id": "qwen/qwen3.8-27b", "nama": "Itera Qwen 3.8 27B (128K)", "tugas": "Koding, Tool Calling & Teks Panjang (IteraCompute)"},
     "vascoo": {"provider": "vascoo", "model_id": "uncensored-x", "nama": "Vascoo Uncensored-X", "tugas": "Teks & Roleplay Tanpa Sensor (Vascoo)"},
     "chatgpt": {"provider": "openai", "model_id": "gpt-4o", "nama": "ChatGPT 4o (OpenAI)", "tugas": "Serba Bisa, Natural & Pintar"},
-    "indo": {"provider": "indo", "model_id": "qwen-uncensored", "nama": "IndoSmart Qwen", "tugas": "Teks Tanpa Sensor (IndoSmart)"},
     "best": {"provider": "bestllm", "model_id": BEST_MODELS[0], "nama": "BestLLM Uncensored", "tugas": "Teks & Roleplay Tanpa Filter"},
     "qwen": {"provider": "bejo", "model_id": "qwen3.8-27b-uncensored", "nama": "Qwen 3.8 27B (Bejoxxx)", "tugas": "Teks Tanpa Sensor & Koding"},
     "deepseek": {"provider": "nocta", "model_id": "deepseek-v4.1", "nama": "DeepSeek v4.1 (Nocta)", "tugas": "Koding, Algoritma & Bug Fixing"},
@@ -641,14 +621,15 @@ KATALOG_MODEL = {
     "video": {"provider": "video_engine", "model_id": "director-flux-16-9", "nama": "AI Video Director", "tugas": "Skenario Video & Keyframe"}
 }
 
-FOLDER_PREFIXES = ("tip_", "orca_", "masb_", "rv_", "bk_", "ok_", "gonka_", "zm_", "ter_", "dahl_")
+FOLDER_PREFIXES = ("indo_", "tip_", "orca_", "masb_", "rv_", "bk_", "ok_", "gonka_", "zm_", "ter_", "dahl_")
 
 def segarkan_folder_kategori():
     kunci_lama = [k for k in list(KATALOG_MODEL.keys()) if k.startswith(FOLDER_PREFIXES)]
     for k in kunci_lama:
         del KATALOG_MODEL[k]
 
-    # TipRouter mendukung hingga 30 model sesuai isi key utama
+    for idx, m_id in enumerate(INDO_MODELS[:12]):
+        KATALOG_MODEL[f"indo_{idx}"] = {"provider": "indo", "model_id": m_id, "nama": f"Indo: {m_id}", "tugas": "IndoSmartRouter AI"}
     for idx, m_id in enumerate(TIP_MODELS[:30]):
         KATALOG_MODEL[f"tip_{idx}"] = {"provider": "tip", "model_id": m_id, "nama": f"TipRouter: {m_id}", "tugas": "TipRouter Multi-Model Gateway"}
     for idx, m_id in enumerate(ORCA_MODELS[:12]):
@@ -703,6 +684,7 @@ def uji_satu_model_cepat(kode_model):
         return True, "Layanan Visual Aktif (Gratis / Tanpa Kuota)."
 
     peta_kunci = {
+        "indo": (INDO_API_KEY, "INDO_API_KEY", INDO_BASE_URL),
         "tip": (TIP_API_KEY, "TIP_API_KEY", TIP_BASE_URL),
         "orca": (ORCA_API_KEY, "ORCA_API_KEY", ORCA_BASE_URL),
         "masb": (MASB_API_KEY, "MASB_API_KEY", MASB_BASE_URL),
@@ -715,7 +697,6 @@ def uji_satu_model_cepat(kode_model):
         "dahl": (DAHL_API_KEY, "DAHL_API_KEY", DAHL_BASE_URL),
         "ter": (TER_API_KEY, "TER_API_KEY", TER_BASE_URL),
         "zenmux": (ZENMUX_API_KEY, "ZENMUX_API_KEY", ZENMUX_ACTIVE_BASE),
-        "indo": (INDO_API_KEY, "INDO_API_KEY", INDO_BASE_URL),
         "openai": (OPENAI_API_KEY, "OPENAI_API_KEY", OPENAI_BASE_URL),
         "bestllm": (BEST_API_KEY, "BEST_API_KEY", BEST_BASE_URL),
         "bejo": (BEJO_API_KEY, "BEJO_API_KEY", BEJO_BASE_URL),
@@ -799,6 +780,7 @@ def ambil_status_kategori(awalan):
 def buat_menu_utama(mode_aktif, chat_id=None):
     markup = InlineKeyboardMarkup(row_width=2)
 
+    ikon_indo, akt_indo, tot_indo = ambil_status_kategori("indo_")
     ikon_tip, akt_tip, tot_tip = ambil_status_kategori("tip_")
     ikon_orca, akt_orca, tot_orca = ambil_status_kategori("orca_")
     ikon_masb, akt_masb, tot_masb = ambil_status_kategori("masb_")
@@ -810,7 +792,8 @@ def buat_menu_utama(mode_aktif, chat_id=None):
     ikon_ter, akt_ter, tot_ter = ambil_status_kategori("ter_")
     ikon_dahl, akt_dahl, tot_dahl = ambil_status_kategori("dahl_")
 
-    markup.row(InlineKeyboardButton(f"{ikon_tip}📂 TIPROUTER AI ({akt_tip}/{tot_tip} Aktif)", callback_data="cat_tip"))
+    markup.row(InlineKeyboardButton(f"{ikon_indo}📂 INDOSMART ({akt_indo}/{tot_indo} Aktif)", callback_data="cat_indo"))
+    markup.row(InlineKeyboardButton(f"{ikon_tip}📂 TIPROUTER ({akt_tip}/{tot_tip} Aktif)", callback_data="cat_tip"))
     markup.row(InlineKeyboardButton(f"{ikon_orca}📂 ORCAROUTER ({akt_orca}/{tot_orca} Aktif)", callback_data="cat_orca"))
     markup.row(InlineKeyboardButton(f"{ikon_masb}📂 MASB AI ({akt_masb}/{tot_masb} Aktif)", callback_data="cat_masb"))
     markup.row(InlineKeyboardButton(f"{ikon_rv}📂 ROUTEVA TECH ({akt_rv}/{tot_rv} Aktif)", callback_data="cat_routeva"))
@@ -850,7 +833,9 @@ def buat_submenu_folder(mode_aktif, awalan, callback_refresh):
 
 def buat_tombol_kembali_menu(kode_model):
     markup = InlineKeyboardMarkup()
-    if kode_model.startswith("tip_"):
+    if kode_model.startswith("indo_"):
+        markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder IndoSmart", callback_data="cat_indo"))
+    elif kode_model.startswith("tip_"):
         markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder TipRouter", callback_data="cat_tip"))
     elif kode_model.startswith("orca_"):
         markup.row(InlineKeyboardButton("⬅️ Kembali ke Folder OrcaRouter", callback_data="cat_orca"))
@@ -906,8 +891,9 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None, chat_id=None)
     riwayat_user = CHAT_HISTORY.get(chat_id, []) if chat_id else None
 
     try:
-        if provider in ["tip", "orca", "masb", "routeva", "botkeep", "onekey", "gonka", "itera", "vascoo", "dahl", "ter", "indo", "openai", "bestllm", "bejo", "nocta"]:
+        if provider in ["indo", "tip", "orca", "masb", "routeva", "botkeep", "onekey", "gonka", "itera", "vascoo", "dahl", "ter", "openai", "bestllm", "bejo", "nocta"]:
             peta_base = {
+                "indo": (INDO_BASE_URL, INDO_API_KEY),
                 "tip": (TIP_BASE_URL, TIP_API_KEY),
                 "orca": (ORCA_BASE_URL, ORCA_API_KEY),
                 "masb": (MASB_BASE_URL, MASB_API_KEY),
@@ -919,7 +905,6 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None, chat_id=None)
                 "vascoo": (VASCOO_BASE_URL, VASCOO_API_KEY),
                 "dahl": (DAHL_BASE_URL, DAHL_API_KEY),
                 "ter": (TER_BASE_URL, TER_API_KEY),
-                "indo": (INDO_BASE_URL, INDO_API_KEY),
                 "openai": (OPENAI_BASE_URL, OPENAI_API_KEY),
                 "bestllm": (BEST_BASE_URL, BEST_API_KEY),
                 "bejo": (BEJO_BASE_URL, BEJO_API_KEY),
@@ -1029,7 +1014,7 @@ def kerjakan_video(message, teks_user):
     instruksi_video = "Kamu AI Video Director. Buatlah: 1. Skenario Visual detik demi detik, 2. Prompt Teknis Bahasa Inggris untuk engine video AI."
     teks_skenario, penulis = "", "Video Director"
 
-    antrean_video = ["tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "zm_0", "indo", "chatgpt", "qwen", "recursive"]
+    antrean_video = ["indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "zm_0", "chatgpt", "qwen", "recursive"]
     for k in antrean_video:
         if k in KATALOG_MODEL:
             ok, hasil, label = eksekusi_tunggal(k, teks_user, instruksi_video, message.chat.id)
@@ -1157,6 +1142,22 @@ def handle_command_model(message):
     if arg in ["history", "riwayat"]:
         msg_h = bot.send_message(chat_id, teks_menu_history_str(chat_id), reply_markup=buat_markup_history(chat_id))
         catat_pesan_ui(chat_id, msg_h)
+        return
+
+    if arg in ["indo", "indosmart"]:
+        msg_wait = bot.send_message(chat_id, "🔍 Memeriksa kesehatan model di dalam IndoSmartRouter...")
+        catat_pesan_ui(chat_id, msg_wait)
+        periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("indo_")])
+        try:
+            bot.edit_message_text(
+                teks_submenu_folder_str("INDOSMART AI", mode_sekarang, "indo_"),
+                chat_id=chat_id,
+                message_id=msg_wait.message_id,
+                reply_markup=buat_submenu_folder(mode_sekarang, "indo_", "refresh_indo")
+            )
+        except telebot.apihelper.ApiTelegramException as e:
+            if "message is not modified" in str(e):
+                pass
         return
 
     if arg in ["tip", "tiprouter"]:
@@ -1323,7 +1324,7 @@ def handle_cek_kuota(message):
     periksa_kesehatan_serentak()
 
     laporan = "📊 LAPORAN KESEHATAN SERVER & KUOTA API\n─────────────────────────\n"
-    daftar_utama = ["tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "indo", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
+    daftar_utama = ["indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
     for k in daftar_utama:
         if k in KATALOG_MODEL:
             sehat = MODEL_HEALTH_CACHE.get(k, {})
@@ -1340,7 +1341,7 @@ def handle_cek_kuota(message):
 # 9. Handler Klik Tombol
 @bot.callback_query_handler(func=lambda call: True)
 def handle_semua_tombol(call):
-    global TIP_MODELS, ORCA_MODELS, MASB_MODELS, ROUTEVA_MODELS, BOTKEEP_MODELS, ONEKEY_MODELS, GONKA_MODELS, ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
+    global INDO_MODELS, TIP_MODELS, ORCA_MODELS, MASB_MODELS, ROUTEVA_MODELS, BOTKEEP_MODELS, ONEKEY_MODELS, GONKA_MODELS, ZENMUX_MODELS, TER_MODELS, DAHL_MODELS
     chat_id, data = call.message.chat.id, call.data
     msg_id = call.message.message_id
     mode_sekarang = USER_LOCKED_MODEL.get(chat_id, "auto")
@@ -1548,6 +1549,17 @@ def handle_semua_tombol(call):
             except telebot.apihelper.ApiTelegramException as e:
                 if "message is not modified" in str(e):
                     pass
+        elif data == "cat_indo":
+            try:
+                bot.edit_message_text(
+                    teks_submenu_folder_str("INDOSMART AI", mode_sekarang, "indo_"),
+                    chat_id=chat_id,
+                    message_id=msg_id,
+                    reply_markup=buat_submenu_folder(mode_sekarang, "indo_", "refresh_indo")
+                )
+            except telebot.apihelper.ApiTelegramException as e:
+                if "message is not modified" in str(e):
+                    pass
         elif data == "cat_tip":
             try:
                 bot.edit_message_text(
@@ -1658,8 +1670,25 @@ def handle_semua_tombol(call):
             except telebot.apihelper.ApiTelegramException as e:
                 if "message is not modified" in str(e):
                     pass
+        elif data == "refresh_indo":
+            bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder IndoSmart...")
+            global INDO_MODELS
+            INDO_MODELS = sisir_model_indo()
+            segarkan_folder_kategori()
+            periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("indo_")])
+            try:
+                bot.edit_message_text(
+                    teks_submenu_folder_str("INDOSMART AI", mode_sekarang, "indo_"),
+                    chat_id=chat_id,
+                    message_id=msg_id,
+                    reply_markup=buat_submenu_folder(mode_sekarang, "indo_", "refresh_indo")
+                )
+            except telebot.apihelper.ApiTelegramException as e:
+                if "message is not modified" in str(e):
+                    pass
         elif data == "refresh_tip":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang 30 model TipRouter...")
+            global TIP_MODELS
             TIP_MODELS = sisir_model_tip()
             segarkan_folder_kategori()
             periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("tip_")])
@@ -1675,6 +1704,7 @@ def handle_semua_tombol(call):
                     pass
         elif data == "refresh_orca":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder OrcaRouter...")
+            global ORCA_MODELS
             ORCA_MODELS = sisir_model_orca()
             segarkan_folder_kategori()
             periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("orca_")])
@@ -1690,6 +1720,7 @@ def handle_semua_tombol(call):
                     pass
         elif data == "refresh_masb":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder Masb AI...")
+            global MASB_MODELS
             MASB_MODELS = sisir_model_masb()
             segarkan_folder_kategori()
             periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("masb_")])
@@ -1705,6 +1736,7 @@ def handle_semua_tombol(call):
                     pass
         elif data == "refresh_routeva":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder Routeva Tech...")
+            global ROUTEVA_MODELS
             ROUTEVA_MODELS = sisir_model_routeva()
             segarkan_folder_kategori()
             periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("rv_")])
@@ -1720,6 +1752,7 @@ def handle_semua_tombol(call):
                     pass
         elif data == "refresh_botkeep":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder BotKeep Node18...")
+            global BOTKEEP_MODELS
             BOTKEEP_MODELS = sisir_model_botkeep()
             segarkan_folder_kategori()
             periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("bk_")])
@@ -1735,6 +1768,7 @@ def handle_semua_tombol(call):
                     pass
         elif data == "refresh_onekey":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder OneKey LLM...")
+            global ONEKEY_MODELS
             ONEKEY_MODELS = sisir_model_onekey()
             segarkan_folder_kategori()
             periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("ok_")])
@@ -1750,6 +1784,7 @@ def handle_semua_tombol(call):
                     pass
         elif data == "refresh_gonka":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder GonkaRouter...")
+            global GONKA_MODELS
             GONKA_MODELS = sisir_model_gonka()
             segarkan_folder_kategori()
             periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("gonka_")])
@@ -1765,6 +1800,7 @@ def handle_semua_tombol(call):
                     pass
         elif data == "refresh_zm":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder ZenMux...")
+            global ZENMUX_MODELS
             ZENMUX_MODELS = sisir_model_zenmux()
             segarkan_folder_kategori()
             periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("zm_")])
@@ -1780,6 +1816,7 @@ def handle_semua_tombol(call):
                     pass
         elif data == "refresh_ter":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder 9Router...")
+            global TER_MODELS
             TER_MODELS = sisir_model_ter()
             segarkan_folder_kategori()
             periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("ter_")])
@@ -1795,6 +1832,7 @@ def handle_semua_tombol(call):
                     pass
         elif data == "refresh_dahl":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang folder Dahl...")
+            global DAHL_MODELS
             DAHL_MODELS = sisir_model_dahl()
             segarkan_folder_kategori()
             periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith("dahl_")])
@@ -1884,7 +1922,7 @@ def handle_start(message):
         f"🔒 Mode Aktif: {ket_mode}\n\n"
         f"📌 Perintah Utama:\n"
         f"• /model — Cek status 🟢 Aktif / 🔴 Mati semua model & buka Folder Kategori.\n"
-        f"• /model tip — Langsung membuka 30 model di folder TipRouter.\n"
+        f"• /model indo — Langsung membuka folder model IndoSmart.\n"
         f"• /history — Lihat riwayat, pilih proyek lama untuk dilanjutkan (▶️ Lanjut), atau hapus riwayat.\n"
         f"• /reset — Simpan proyek saat ini ke arsip & mulai proyek baru.\n"
         f"• /kuota — Lihat laporan kesehatan tiap server & penyebab error."
@@ -1968,11 +2006,11 @@ def handle_pesan_utama(message):
 
     bot.send_chat_action(chat_id, 'typing')
     if tugas == "koding":
-        antrean, label_tugas = ["tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "indo", "qwen", "argon", "recursive"], "Auto - Koding"
+        antrean, label_tugas = ["indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "qwen", "argon", "recursive"], "Auto - Koding"
     elif tugas == "recursive":
-        antrean, label_tugas = ["recursive", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "indo", "ter_0", "best"], "Auto - Recursive"
+        antrean, label_tugas = ["recursive", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "ter_0", "best"], "Auto - Recursive"
     else:
-        antrean, label_tugas = ["tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "indo", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
+        antrean, label_tugas = ["indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
 
     for kode in antrean:
         if kode in KATALOG_MODEL:
