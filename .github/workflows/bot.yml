@@ -24,7 +24,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: |
@@ -35,6 +35,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
+          HAN_API_KEY: ${{ secrets.HAN_API_KEY }}
           FAJRIAG_API_KEY: ${{ secrets.FAJRIAG_API_KEY }}
           TIP_API_KEY: ${{ secrets.TIP_API_KEY }}
           ORCA_API_KEY: ${{ secrets.ORCA_API_KEY }}
