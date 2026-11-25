@@ -389,7 +389,7 @@ FOLDER_CONFIG = {
     },
     "fajriag": {
         "prefix": "fajri_", "label": "FAJRIAG AI", "limit": 12, "aliases": ["fajriag", "fajri"],
-        "defaults": ["glm-5.3-flash", "deepseek-v4.1-flash"]
+        "defaults": ["deepseek-v4.1-flash-1017-free", "glm-5.3-flash", "deepseek-v4.1-flash"]
     },
     "indo": {
         "prefix": "indo_", "label": "INDOSMART", "limit": 12, "aliases": ["indo", "indosmart"],
@@ -446,6 +446,10 @@ FOLDER_CONFIG = {
 }
 
 FOLDER_PREFIXES = tuple(cfg["prefix"] for cfg in FOLDER_CONFIG.values())
+
+def _is_fajriag_uncensored(model_id):
+    low = model_id.lower()
+    return "glm-5.3-flash" in low or "deepseek-v4.1-flash-1017-free" in low
 
 def sisir_provider(prov_key):
     global ZENMUX_ACTIVE_BASE
@@ -518,7 +522,7 @@ def segarkan_folder_kategori(target_prov=None):
             del KATALOG_MODEL[k]
         models = sisir_provider(prov) if target_prov else cfg["defaults"]
         for idx, m_id in enumerate(models[:cfg["limit"]]):
-            if prov == "fajriag" and "glm-5.3-flash" in m_id.lower():
+            if prov == "fajriag" and _is_fajriag_uncensored(m_id):
                 tugas = "Inject Uncensored (FajriAG)"
             elif prov == "han" and "abliterated" in m_id.lower():
                 tugas = "Reasoning & Koding Abliterated (TokenHan)"
@@ -721,7 +725,7 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None, chat_id=None)
     riwayat = CHAT_HISTORY.get(chat_id, []) if chat_id else None
 
     if not instruksi_khusus and (
-        (provider == "fajriag" and "glm-5.3-flash" in model_id.lower())
+        (provider == "fajriag" and _is_fajriag_uncensored(model_id))
         or (provider == "han" and "abliterated" in model_id.lower())
     ):
         instruksi_khusus = (
@@ -808,7 +812,7 @@ def kerjakan_video(message, teks_user):
     msg_wait = bot.reply_to(message, "🟢🔒 [Model: AI Video Director]\n⏳ Menyusun skenario & merender Keyframe...")
     instruksi = "Kamu AI Video Director. Buatlah: 1. Skenario Visual detik demi detik, 2. Prompt Teknis Bahasa Inggris untuk engine video AI."
     teks_skenario, penulis = "", "Video Director"
-    for k in ["han_0", "han_1", "fajri_0", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt"]:
+    for k in ["han_0", "han_1", "fajri_0", "fajri_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt"]:
         if k in KATALOG_MODEL:
             ok, hasil, label = eksekusi_tunggal(k, teks_user, instruksi, message.chat.id)
             if ok:
@@ -841,11 +845,11 @@ def handle_start(message):
     ket = "OTOMATIS" if mode == "auto" else f"TERKUNCI [{KATALOG_MODEL.get(mode, {}).get('nama', mode)}]"
     msg = bot.send_message(
         chat_id,
-        f"🤖 Bot Multi-Model Ringan (TokenHan + FajriAG + TipRouter + Salin Kode 1-Klik) Siap!\n"
+        f"🤖 Bot Multi-Model Ringan (FajriAG + TokenHan + TipRouter + Salin Kode 1-Klik) Siap!\n"
         f"🔒 Mode Aktif: {ket}\n\n"
         f"📌 Perintah Utama:\n"
         f"• /model — Buka menu status 🟢/🔴 & kunci model.\n"
-        f"• /model han — Buka folder TokenHan (DeepSeek-R1-Abliterated-7B & DeepSeek-V4).\n"
+        f"• /model fajriag — Buka folder FajriAG (deepseek-v4.1-flash-1017-free & glm-5.3-flash).\n"
         f"• /history — Lihat, hapus, atau lanjutkan proyek lama.\n"
         f"• /reset — Arsipkan proyek saat ini & mulai topik baru.\n"
         f"• /kuota — Cek laporan status server."
@@ -916,7 +920,7 @@ def handle_cek_kuota(message):
     bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
     msg = bot.send_message(chat_id, "🔍 Memeriksa status server & kuota...")
     catat_pesan_ui(chat_id, msg)
-    daftar = ["han_0", "han_1", "fajri_0", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
+    daftar = ["fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
     periksa_kesehatan_serentak([k for k in daftar if k in KATALOG_MODEL], force=True)
     laporan = "📊 LAPORAN KESEHATAN SERVER & KUOTA API\n─────────────────────────\n"
     for k in daftar:
@@ -1129,11 +1133,11 @@ def handle_pesan_utama(message):
 
     bot.send_chat_action(chat_id, "typing")
     if tugas == "koding":
-        antrean, label = ["han_0", "han_1", "fajri_1", "fajri_0", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "qwen", "argon", "recursive"], "Auto - Koding"
+        antrean, label = ["fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "qwen", "argon", "recursive"], "Auto - Koding"
     elif tugas == "recursive":
-        antrean, label = ["recursive", "han_0", "han_1", "fajri_0", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "ter_0", "best"], "Auto - Recursive"
+        antrean, label = ["recursive", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "ter_0", "best"], "Auto - Recursive"
     else:
-        antrean, label = ["han_0", "han_1", "fajri_0", "fajri_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
+        antrean, label = ["fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
 
     for kode in antrean:
         if kode in KATALOG_MODEL and KEYS.get(KATALOG_MODEL[kode]["provider"]):
