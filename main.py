@@ -400,6 +400,10 @@ def catat_pesan_ui(chat_id, msg_obj):
 # 2. KONFIGURASI FOLDER KATEGORI & PENYISIR MODEL OTOMATIS (MODULAR)
 # =========================================================================
 FOLDER_CONFIG = {
+    "gemini": {
+        "prefix": "gem_", "label": "GEMINI AI", "limit": 6, "aliases": ["gemini", "gem"],
+        "defaults": ["gemini-4-hydrogen", "gemini-4-neon", "gemini-4-carbon", "gemini-4-argon"]
+    },
     "alfnnn": {
         "prefix": "alf_", "label": "ALFNNN AI", "limit": 15, "aliases": ["alfnnn", "alf"],
         "defaults": ["at/deepseek-v4.1-flash-free", "at/deepseek-v4.1-flash-1017"]
@@ -477,6 +481,10 @@ def sisir_provider(prov_key):
     cfg = FOLDER_CONFIG[prov_key]
     api_key = KEYS.get(prov_key, "")
     defaults = cfg["defaults"]
+    if prov_key == "gemini":
+        # Gemini dipakai lewat google-genai client, bukan endpoint OpenAI /models,
+        # jadi jangan coba BASE_URLS["gemini"] (tidak ada).
+        return list(defaults)
     if not api_key:
         return list(defaults)
 
@@ -530,9 +538,6 @@ KATALOG_MODEL = {
     "qwen": {"provider": "bejo", "model_id": "qwen3.8-27b-uncensored", "nama": "Qwen 3.8 27B (Bejoxxx)", "tugas": "Teks Tanpa Sensor & Koding"},
     "deepseek": {"provider": "nocta", "model_id": "deepseek-v4.1", "nama": "DeepSeek v4.1 (Nocta)", "tugas": "Koding, Algoritma & Bug Fixing"},
     "luna": {"provider": "nocta", "model_id": "gpt-5.6-luna", "nama": "GPT-5.6 Luna (Nocta)", "tugas": "Teks Kreatif & Natural"},
-    "argon": {"provider": "gemini", "model_id": "gemini-4-argon", "nama": "Gemini 4 Argon", "tugas": "Penalaran Logika & Analisis"},
-    "gemini": {"provider": "gemini", "model_id": "gemini-1.5-pro", "nama": "Gemini 1.5 Pro", "tugas": "Dokumen Panjang"},
-    "flash": {"provider": "gemini", "model_id": "gemini-1.5-flash", "nama": "Gemini 1.5 Flash", "tugas": "Respon Cepat"},
     "recursive": {"provider": "openrouter", "model_id": "openrouter/free", "nama": "OpenRouter Recursive", "tugas": "Teks Multi-Model Otomatis"},
     "gambar": {"provider": "pollinations", "model_id": "flux-uncensored", "nama": "Pollinations Flux", "tugas": "Gambar & Foto Tanpa Filter"},
     "video": {"provider": "video_engine", "model_id": "director-flux-16-9", "nama": "AI Video Director", "tugas": "Skenario Video & Keyframe"}
@@ -1003,7 +1008,7 @@ def handle_cek_kuota(message):
     bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
     msg = bot.send_message(chat_id, "🔍 <i>Memeriksa status server & API Key...</i>", parse_mode="HTML")
     catat_pesan_ui(chat_id, msg)
-    daftar = ["alf_0", "alf_1", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
+    daftar = ["alf_0", "alf_1", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "best", "qwen", "deepseek", "luna", "gem_0", "gem_1", "gem_2", "gem_3", "recursive", "dahl_0", "ter_0", "zm_0"]
     periksa_kesehatan_serentak([k for k in daftar if k in KATALOG_MODEL], force=True)
     laporan = "📊 <b>STATUS SERVER & API KEY</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
     for k in daftar:
@@ -1220,7 +1225,7 @@ def handle_pesan_utama(message):
 
     bot.send_chat_action(chat_id, "typing")
     if tugas == "koding":
-        antrean, label = ["alf_0", "alf_1", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "qwen", "argon", "recursive"], "Auto • Koding"
+        antrean, label = ["alf_0", "alf_1", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "qwen", "gem_2", "recursive"], "Auto • Koding"
     elif tugas == "recursive":
         antrean, label = ["recursive", "alf_0", "alf_1", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "ter_0", "best"], "Auto • Recursive"
     else:
