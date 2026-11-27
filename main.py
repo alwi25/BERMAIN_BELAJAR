@@ -69,6 +69,11 @@ BASE_URLS = {
     "orca": "https://api.orcarouter.ai/v1",
     "masb": "https://ai.masb.web.id/v1",
     "routeva": "https://api.routeva.tech/v1",
+    # PERINGATAN: BotKeep hanya tersedia via http:// (tanpa TLS).
+    # Dites 2026-11-27: https:// di port 61172 maupun 443 tidak merespons,
+    # jadi API key dan isi chat ke provider ini dikirim tanpa enkripsi dan
+    # bisa disadap di jaringan. Jangan ubah ke https:// tanpa mengetes ulang,
+    # karena akan mematikan provider ini.
     "botkeep": "http://node18.botkeep.cloud:61172/v1",
     "onekey": "https://api.onekeyllmapi.com/v1",
     "gonka": "https://api.gonkarouter.io/v1",
@@ -83,6 +88,9 @@ BASE_URLS = {
     "nocta": "https://nocta-digital.web.id/v1",
     "openrouter": "https://openrouter.ai/api/v1",
 }
+
+if KEYS.get("botkeep"):
+    print("PERINGATAN: BotKeep memakai http:// tanpa enkripsi — API key dan isi chat ke provider ini bisa disadap.")
 ZENMUX_CANDIDATE_BASES = ["https://api.zenmux.ai/v1", "https://zenmux.ai/api/v1", "https://zenmux.ai/v1"]
 ZENMUX_ACTIVE_BASE = ZENMUX_CANDIDATE_BASES[0]
 
