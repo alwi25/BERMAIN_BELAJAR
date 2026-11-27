@@ -640,24 +640,42 @@ def periksa_kesehatan_serentak(daftar_kode=None, force=False):
     if not daftar_kode:
         LAST_HEALTH_CHECK = time.time()
 
-def ambil_ikon_status(kode_model, mode_aktif):
+def is_model_aktif(kode_model):
+    prov = KATALOG_MODEL.get(kode_model, {}).get("provider", "")
+    if prov in ["pollinations", "video_engine"]:
+        return True
+    if not KEYS.get(prov):
+        return False
     sehat = MODEL_HEALTH_CACHE.get(kode_model)
-    warna = "🟢" if (sehat and sehat.get("active")) else ("🔴" if sehat else "⚪")
+    return bool(sehat and sehat.get("active") is True)
+
+def ambil_ikon_status(kode_model, mode_aktif):
+    prov = KATALOG_MODEL.get(kode_model, {}).get("provider", "")
+    if prov not in ["pollinations", "video_engine"] and not KEYS.get(prov):
+        warna = "🔴"
+    elif is_model_aktif(kode_model):
+        warna = "🟢"
+    elif MODEL_HEALTH_CACHE.get(kode_model):
+        warna = "🔴"
+    else:
+        warna = "🔴"
     return f"{warna}{'🔒' if kode_model == mode_aktif else ''}"
 
-def ambil_status_kategori(awalan):
+def ambil_status_kategori(prov, awalan):
     kumpulan = [k for k in KATALOG_MODEL if k.startswith(awalan)]
-    aktif = sum(1 for k in kumpulan if MODEL_HEALTH_CACHE.get(k, {}).get("active", False))
+    if not KEYS.get(prov):
+        return "🔴", 0, len(kumpulan)
+    aktif = sum(1 for k in kumpulan if is_model_aktif(k))
     return ("🟢" if aktif > 0 else "🔴"), aktif, len(kumpulan)
 
 # =========================================================================
-# 5. MENU TELEGRAM (TAMPILAN KEREN & TERSTRUKTUR)
+# 5. MENU TELEGRAM (STATUS MURNI: HIJAU HANYA JIKA API KEY & MODEL AKTIF)
 # =========================================================================
 def buat_menu_utama(mode_aktif, chat_id=None):
     markup = InlineKeyboardMarkup(row_width=2)
     for prov, cfg in FOLDER_CONFIG.items():
-        ikon, akt, tot = ambil_status_kategori(cfg["prefix"])
-        markup.row(InlineKeyboardButton(f"{ikon} 📁 {cfg['label']} • {akt}/{tot} 🟢", callback_data=f"cat_{prov}"))
+        ikon, akt, tot = ambil_status_kategori(prov, cfg["prefix"])
+        markup.row(InlineKeyboardButton(f"{ikon} 📁 {cfg['label']} • {akt}/{tot}", callback_data=f"cat_{prov}"))
 
     tombol_list = [
         InlineKeyboardButton(f"{ambil_ikon_status(k, mode_aktif)} {k.upper()} • {info['nama'][:9]}", callback_data=f"lock_{k}")
@@ -719,34 +737,42 @@ def kunci_model_pilihan(chat_id, kode_pilihan):
 
 def teks_menu_utama_str(mode_sekarang):
     info = "⚡ Mode Otomatis" if mode_sekarang == "auto" else KATALOG_MODEL.get(mode_sekarang, {}).get("nama", "Unknown")
-    hijau = sum(1 for k in KATALOG_MODEL if MODEL_HEALTH_CACHE.get(k, {}).get("active", False))
+    hijau = sum(1 for k in KATALOG_MODEL if is_model_aktif(k))
     merah = len(KATALOG_MODEL) - hijau
     return (
         f"🎛 <b>AI COMMAND CENTER</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"• <b>Mode Aktif</b> : {html.escape(info)}\n"
-        f"• <b>Kesehatan</b>  : 🟢 {hijau} Aktif  |  🔴 {merah} Mati\n"
+        f"• <b>Kesehatan</b>  : 🟢 {hijau} Aktif  |  🔴 {merah} Tidak Aktif\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🟢 Kunci model  •  🔴 Lihat alasan error\n"
+        f"🟢 API Key & Model Aktif  •  🔴 Mati / Key Kosong\n"
         f"👇 <b>Pilih folder server atau model:</b>"
     )
 
 def teks_submenu_folder_str(prov, mode_sekarang):
     cfg = FOLDER_CONFIG[prov]
     info = "Mode Otomatis" if mode_sekarang == "auto" else KATALOG_MODEL.get(mode_sekarang, {}).get("nama", "Unknown")
+    key_ada = bool(KEYS.get(prov))
     baris = []
     for k, v in KATALOG_MODEL.items():
         if k.startswith(cfg["prefix"]):
-            sehat = MODEL_HEALTH_CACHE.get(k, {})
-            ikon = "🟢" if sehat.get("active") else "🔴"
-            ket = "Aktif" if sehat.get("active") else sehat.get("reason", "Belum dicek")[:34]
+            aktif = is_model_aktif(k)
+            ikon = "🟢" if aktif else "🔴"
+            if not key_ada:
+                ket = f"API Key Kosong ({ENV_NAMES.get(prov, prov.upper())})"
+            elif aktif:
+                ket = "Aktif"
+            else:
+                ket = MODEL_HEALTH_CACHE.get(k, {}).get("reason", "Tidak aktif / gagal ping")[:36]
             gembok = " 🔒" if k == mode_sekarang else ""
             baris.append(f"{ikon}{gembok} <code>{html.escape(v['model_id'])}</code>\n   <i>└ {html.escape(ket)}</i>")
+    status_key = "🟢 Terpasang" if key_ada else f"🔴 Kosong ({ENV_NAMES.get(prov, prov.upper())})"
     header = (
         f"📂 <b>{cfg['label']}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"• <b>Mode</b> : {html.escape(info)}\n"
-        f"• <b>Endpoint</b>: <code>{html.escape(BASE_URLS.get(prov, 'Multi'))}</code>\n"
+        f"• <b>Mode</b>     : {html.escape(info)}\n"
+        f"• <b>API Key</b>  : {html.escape(status_key)}\n"
+        f"• <b>Endpoint</b> : <code>{html.escape(BASE_URLS.get(prov, 'Multi'))}</code>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
     )
     footer = "\n━━━━━━━━━━━━━━━━━━━━━━\n👇 <i>Klik tombol model di bawah untuk mengunci:</i>"
@@ -977,8 +1003,10 @@ def handle_cek_kuota(message):
     laporan = "📊 <b>STATUS SERVER & API KEY</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
     for k in daftar:
         if k in KATALOG_MODEL:
+            aktif = is_model_aktif(k)
             s = MODEL_HEALTH_CACHE.get(k, {})
-            laporan += f"{'🟢' if s.get('active') else '🔴'} <b>{html.escape(KATALOG_MODEL[k]['nama'])}</b>\n   <i>└ {html.escape(s.get('reason', 'Belum dicek'))}</i>\n"
+            ket = "Aktif" if aktif else s.get("reason", "Tidak aktif / API Key kosong")
+            laporan += f"{'🟢' if aktif else '🔴'} <b>{html.escape(KATALOG_MODEL[k]['nama'])}</b>\n   <i>└ {html.escape(ket)}</i>\n"
     edit_pesan_aman(laporan[:4000], chat_id, msg.message_id, parse_mode="HTML")
 
 # =========================================================================
