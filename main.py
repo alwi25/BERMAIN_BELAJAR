@@ -579,6 +579,59 @@ def analisis_penyebab_http(status_code, response_text):
         return f"Server Down / Gangguan Pusat ({status_code})."
     return f"Gangguan Server ({status_code}): {(response_text or '').strip()[:60]}"
 
+# Cache hasil cek metadata Gemini (models.get) supaya 4 model tidak
+# menembak API berkali-kali dalam satu putaran cek kesehatan.
+GEMINI_CEK_CACHE = {}
+GEMINI_CEK_TTL = 300
+
+def _alasan_gemini(e):
+    teks = str(e)
+    if "429" in teks or "RESOURCE_EXHAUSTED" in teks:
+        return "Kuota Gemini habis (429) — cek di ai.dev/rate-limit."
+    if "503" in teks or "UNAVAILABLE" in teks:
+        return "Gemini sibuk / overload (503) — coba lagi nanti."
+    if "401" in teks or "403" in teks or "UNAUTHENTICATED" in teks or "PERMISSION_DENIED" in teks:
+        return "GEMINI_API_KEY tidak valid."
+    if "404" in teks or "NOT_FOUND" in teks:
+        return "Model tidak tersedia untuk kunci ini (404)."
+    return f"Gangguan Gemini: {teks[:70]}"
+
+def _cek_gemini_ringan(model_id):
+    """Cek kesehatan Gemini tanpa generate_content.
+
+    Pakai client.models.get (metadata saja, body kosong) sehingga cek
+    kesehatan tidak memakan kuota generate (RPM/TPM/RPD). Hasilnya
+    di-cache 300 detik, jadi 4 model Gemini cukup 1x get per model
+    per putaran cek. Jika SDK lama tidak punya models.get, jatuh
+    kembali ke generate_content sekali (perilaku lama).
+    """
+    sekarang = time.time()
+    entri = GEMINI_CEK_CACHE.get(model_id)
+    if entri and sekarang - entri[0] < GEMINI_CEK_TTL:
+        return entri[1], entri[2]
+    if not gemini_client:
+        return False, "GEMINI_API_KEY tidak valid."
+    try:
+        info = gemini_client.models.get(model=model_id)
+        ok, alasan = bool(info), "Model Aktif (cek metadata, tanpa generate)."
+    except AttributeError:
+        try:
+            resp = gemini_client.models.generate_content(model=model_id, contents="hi")
+            ok, alasan = (True, "Model Aktif.") if (resp and resp.text) else (False, "Respons Gemini kosong.")
+        except Exception as e2:
+            ok, alasan = False, _alasan_gemini(e2)
+    except Exception as e:
+        if "404" in str(e) or "NOT_FOUND" in str(e):
+            try:
+                info = gemini_client.models.get(model=f"models/{model_id}")
+                ok, alasan = bool(info), "Model Aktif (cek metadata, tanpa generate)."
+            except Exception as e2:
+                ok, alasan = False, _alasan_gemini(e2)
+        else:
+            ok, alasan = False, _alasan_gemini(e)
+    GEMINI_CEK_CACHE[model_id] = (sekarang, ok, alasan)
+    return ok, alasan
+
 def uji_satu_model_cepat(kode_model):
     info = KATALOG_MODEL.get(kode_model)
     if not info:
@@ -593,13 +646,7 @@ def uji_satu_model_cepat(kode_model):
         return False, f"API Key Kosong ({ENV_NAMES.get(provider, provider.upper())} belum diisi di Secrets)."
 
     if provider == "gemini":
-        if not gemini_client:
-            return False, "GEMINI_API_KEY tidak valid."
-        try:
-            resp = gemini_client.models.generate_content(model=model_id, contents="hi")
-            return (True, "Model Aktif.") if (resp and resp.text) else (False, "Respons Gemini kosong.")
-        except Exception as e:
-            return False, f"Gangguan Gemini: {str(e)[:70]}"
+        return _cek_gemini_ringan(model_id)
 
     base_url = ZENMUX_ACTIVE_BASE if provider == "zenmux" else BASE_URLS.get(provider, "")
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
@@ -636,9 +683,11 @@ def periksa_kesehatan_serentak(daftar_kode=None, force=False):
         else:
             perlu_ping.append(kode)
 
-    if perlu_ping:
+    gemini_kode = [k for k in perlu_ping if KATALOG_MODEL[k]["provider"] == "gemini"]
+    lain_kode = [k for k in perlu_ping if KATALOG_MODEL[k]["provider"] != "gemini"]
+    if lain_kode:
         with ThreadPoolExecutor(max_workers=12) as executor:
-            fmap = {executor.submit(uji_satu_model_cepat, k): k for k in perlu_ping}
+            fmap = {executor.submit(uji_satu_model_cepat, k): k for k in lain_kode}
             for fut in as_completed(fmap):
                 k = fmap[fut]
                 try:
@@ -646,6 +695,16 @@ def periksa_kesehatan_serentak(daftar_kode=None, force=False):
                     MODEL_HEALTH_CACHE[k] = {"active": ok, "reason": alasan}
                 except Exception as e:
                     MODEL_HEALTH_CACHE[k] = {"active": False, "reason": f"Error: {e}"}
+    # Gemini dicek berurutan dengan jeda 1 detik, bukan serentak 4x,
+    # supaya tidak menabrak rate limit Google dalam satu detik.
+    for idx, k in enumerate(gemini_kode):
+        try:
+            ok, alasan = uji_satu_model_cepat(k)
+            MODEL_HEALTH_CACHE[k] = {"active": ok, "reason": alasan}
+        except Exception as e:
+            MODEL_HEALTH_CACHE[k] = {"active": False, "reason": f"Error: {e}"}
+        if idx < len(gemini_kode) - 1:
+            time.sleep(1)
 
     if not daftar_kode:
         LAST_HEALTH_CHECK = time.time()
