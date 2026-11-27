@@ -590,7 +590,7 @@ def _alasan_gemini(e):
         return "Kuota Gemini habis (429) — cek di ai.dev/rate-limit."
     if "503" in teks or "UNAVAILABLE" in teks:
         return "Gemini sibuk / overload (503) — coba lagi nanti."
-    if "401" in teks or "403" in teks or "UNAUTHENTICATED" in teks or "PERMISSION_DENIED" in teks:
+    if "401" in teks or "403" in teks or "UNAUTHENTICATED" in teks or "PERMISSION_DENIED" in teks or "API_KEY_INVALID" in teks or "API key not valid" in teks:
         return "GEMINI_API_KEY tidak valid."
     if "404" in teks or "NOT_FOUND" in teks:
         return "Model tidak tersedia untuk kunci ini (404)."
@@ -879,13 +879,32 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None, chat_id=None)
             if not gemini_client:
                 return False, "GEMINI_API_KEY tidak valid.", nama_tampil
             gabungan = "\n\n".join([f"[{m['role'].upper()}]: {m['content']}" for m in format_messages_payload(user_text, instruksi_khusus, riwayat)])
-            resp = gemini_client.models.generate_content(model=model_id, contents=gabungan)
-            if resp and resp.text:
-                MODEL_HEALTH_CACHE[kode_model] = {"active": True, "reason": "Aktif"}
-                if chat_id:
-                    simpan_riwayat_chat(chat_id, user_text, resp.text.strip())
-                return True, resp.text.strip(), nama_tampil
-            return False, "Respons Gemini kosong.", nama_tampil
+            # Retry otomatis: 503 (model overload) dan 429 (kuota) di sisi
+            # Google sering pulih sesaat kemudian, jadi coba lagi maks 3x
+            # dengan jeda 5 lalu 15 detik (maks tambahan 20 detik).
+            # Error lain (400/401/403/404) tidak diulang karena tidak
+            # akan berubah hasilnya.
+            last_err = None
+            for percobaan in range(3):
+                try:
+                    resp = gemini_client.models.generate_content(model=model_id, contents=gabungan)
+                    if resp and resp.text:
+                        MODEL_HEALTH_CACHE[kode_model] = {"active": True, "reason": "Aktif"}
+                        if chat_id:
+                            simpan_riwayat_chat(chat_id, user_text, resp.text.strip())
+                        return True, resp.text.strip(), nama_tampil
+                    return False, "Respons Gemini kosong.", nama_tampil
+                except Exception as e:
+                    last_err = e
+                    teks = str(e)
+                    bisa_ulang = ("503" in teks or "UNAVAILABLE" in teks or "429" in teks or "RESOURCE_EXHAUSTED" in teks)
+                    if bisa_ulang and percobaan < 2:
+                        time.sleep(5 if percobaan == 0 else 15)
+                        continue
+                    break
+            alasan = _alasan_gemini(last_err) if last_err is not None else "Respons Gemini kosong."
+            MODEL_HEALTH_CACHE[kode_model] = {"active": False, "reason": alasan}
+            return False, alasan, nama_tampil
 
         if provider == "zenmux":
             bases = [ZENMUX_ACTIVE_BASE] + [b for b in ZENMUX_CANDIDATE_BASES if b != ZENMUX_ACTIVE_BASE]
