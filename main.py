@@ -397,7 +397,7 @@ def catat_pesan_ui(chat_id, msg_obj):
 FOLDER_CONFIG = {
     "alfnnn": {
         "prefix": "alf_", "label": "ALFNNN AI", "limit": 15, "aliases": ["alfnnn", "alf"],
-        "defaults": ["deepseek-r1", "deepseek-v3", "qwen-2.5-coder-32b-instruct", "gpt-4o", "claude-3-7-sonnet"]
+        "defaults": ["at/deepseek-v4.1-flash-free", "at/deepseek-v4.1-flash-1017"]
     },
     "han": {
         "prefix": "han_", "label": "TOKENHAN AI", "limit": 12, "aliases": ["han", "tokenhan"],
@@ -851,7 +851,7 @@ def kerjakan_video(message, teks_user):
     msg_wait = bot.reply_to(message, "🎬 <b>AI Video Director</b>\n⏳ Menyusun skenario & merender Keyframe...", parse_mode="HTML")
     instruksi = "Kamu AI Video Director. Buatlah: 1. Skenario Visual detik demi detik, 2. Prompt Teknis Bahasa Inggris untuk engine video AI."
     teks_skenario, penulis = "", "Video Director"
-    for k in ["alf_0", "han_0", "han_1", "fajri_0", "fajri_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt"]:
+    for k in ["alf_0", "alf_1", "han_0", "han_1", "fajri_0", "fajri_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt"]:
         if k in KATALOG_MODEL:
             ok, hasil, label = eksekusi_tunggal(k, teks_user, instruksi, message.chat.id)
             if ok:
@@ -972,7 +972,7 @@ def handle_cek_kuota(message):
     bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
     msg = bot.send_message(chat_id, "🔍 <i>Memeriksa status server & API Key...</i>", parse_mode="HTML")
     catat_pesan_ui(chat_id, msg)
-    daftar = ["alf_0", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
+    daftar = ["alf_0", "alf_1", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
     periksa_kesehatan_serentak([k for k in daftar if k in KATALOG_MODEL], force=True)
     laporan = "📊 <b>STATUS SERVER & API KEY</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
     for k in daftar:
@@ -1187,11 +1187,11 @@ def handle_pesan_utama(message):
 
     bot.send_chat_action(chat_id, "typing")
     if tugas == "koding":
-        antrean, label = ["fajri_0", "fajri_1", "han_0", "han_1", "alf_0", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "qwen", "argon", "recursive"], "Auto • Koding"
+        antrean, label = ["alf_0", "alf_1", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "qwen", "argon", "recursive"], "Auto • Koding"
     elif tugas == "recursive":
-        antrean, label = ["recursive", "alf_0", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "ter_0", "best"], "Auto • Recursive"
+        antrean, label = ["recursive", "alf_0", "alf_1", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "ter_0", "best"], "Auto • Recursive"
     else:
-        antrean, label = ["fajri_0", "fajri_1", "han_0", "han_1", "alf_0", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto • Teks Uncensored"
+        antrean, label = ["alf_0", "alf_1", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto • Teks Uncensored"
 
     for kode in antrean:
         if kode in KATALOG_MODEL and KEYS.get(KATALOG_MODEL[kode]["provider"]):
