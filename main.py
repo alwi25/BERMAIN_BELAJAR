@@ -25,6 +25,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 PROXY_URL = os.environ.get("PROXY_URL", "").strip()
 
 KEYS = {
+    "alfnnn": os.environ.get("ALFNNN_API_KEY", "").strip(),
     "han": os.environ.get("HAN_API_KEY", "").strip(),
     "fajriag": os.environ.get("FAJRIAG_API_KEY", "").strip(),
     "tip": os.environ.get("TIP_API_KEY", "").strip(),
@@ -49,6 +50,7 @@ KEYS = {
 }
 
 ENV_NAMES = {
+    "alfnnn": "ALFNNN_API_KEY",
     "han": "HAN_API_KEY", "fajriag": "FAJRIAG_API_KEY", "tip": "TIP_API_KEY",
     "orca": "ORCA_API_KEY", "masb": "MASB_API_KEY", "routeva": "ROUTEVA_API_KEY",
     "botkeep": "BOTKEEP_API_KEY", "onekey": "ONEKEY_API_KEY", "gonka": "GONKA_API_KEY",
@@ -63,6 +65,7 @@ if not BOT_TOKEN:
 
 # Daftar Base URL Server
 BASE_URLS = {
+    "alfnnn": "https://api.alfnnn.tech/v1",
     "han": "https://apitokenhan.my.id/v1",
     "fajriag": "https://token.fajriag.ai.id/v1",
     "tip": "https://tiprouter.my.id/v1",
@@ -200,7 +203,7 @@ def buat_tombol_salin_kode(chat_id, daftar_blok):
     LAST_CODE_BLOCKS[chat_id] = daftar_blok
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(
-        InlineKeyboardButton(f"📋 Tampilkan Hanya Source Code ({len(daftar_blok)} Blok - Salin 1-Klik)", callback_data="copy_raw_code"),
+        InlineKeyboardButton(f"📋 Salin Source Code Utuh ({len(daftar_blok)} Blok)", callback_data="copy_raw_code"),
         InlineKeyboardButton("📥 Unduh File Source Code (.py / .yml / .txt)", callback_data="dl_raw_code")
     )
     return markup
@@ -208,7 +211,11 @@ def buat_tombol_salin_kode(chat_id, daftar_blok):
 def kirim_pesan_rapi(message, isi_teks, nama_model, status_mode):
     chat_id = message.chat.id
     markup_kode = buat_tombol_salin_kode(chat_id, ekstrak_blok_kode(isi_teks))
-    header = f"🟢 <b>[ Model Aktif: {html.escape(nama_model)} ]</b>\n📌 <b>[ Status: {html.escape(status_mode)} ]</b>\n" + ("─" * 26) + "\n\n"
+    header = (
+        f"⚡ <b>{html.escape(nama_model)}</b>\n"
+        f"🧭 <i>{html.escape(status_mode)}</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    )
     potongan = pecah_pesan_aman_kode(isi_teks, batas=3400)
     for idx, pot in enumerate(potongan):
         teks_kirim = (header + format_ke_html_telegram(pot)) if idx == 0 else format_ke_html_telegram(pot)
@@ -216,7 +223,7 @@ def kirim_pesan_rapi(message, isi_teks, nama_model, status_mode):
         try:
             bot.reply_to(message, teks_kirim, parse_mode="HTML", reply_markup=rm)
         except Exception:
-            polos = (f"🟢 [ Model Aktif: {nama_model} ]\n📌 [ Status: {status_mode} ]\n" + ("─" * 26) + "\n\n" + pot) if idx == 0 else pot
+            polos = (f"⚡ {nama_model}\n🧭 {status_mode}\n━━━━━━━━━━━━━━━━━━━━━━\n\n" + pot) if idx == 0 else pot
             bot.reply_to(message, polos[:4000], reply_markup=rm)
 
 # =========================================================================
@@ -322,20 +329,25 @@ def teks_menu_history_str(chat_id):
     pasangan = ambil_pasangan_riwayat(chat_id)
     daftar_proj = SAVED_PROJECTS.get(chat_id, [])
     if not pasangan and not daftar_proj:
-        return "📜 RIWAYAT & PROYEK TERSIMPAN (HISTORY)\n─────────────────────────\n📭 Belum ada riwayat percakapan atau proyek yang tersimpan."
-    baris = ["📜 PUSAT RIWAYAT & LANJUTKAN PROYEK\n─────────────────────────"]
+        return (
+            "📜 <b>PUSAT RIWAYAT & PROYEK</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "📭 Belum ada riwayat percakapan atau proyek tersimpan."
+        )
+    baris = ["📜 <b>PUSAT RIWAYAT & LANJUTKAN PROYEK</b>\n━━━━━━━━━━━━━━━━━━━━━━"]
     if pasangan:
-        baris.append(f"🟢 SESI PROYEK AKTIF SAAT INI ({len(pasangan)} Langkah):")
+        baris.append(f"🟢 <b>SESI AKTIF</b> ({len(pasangan)} Langkah):")
         for idx, (u_t, a_t) in enumerate(pasangan):
-            u_s = u_t.replace("\n", " ").strip()[:42]
-            a_s = a_t.replace("\n", " ").strip()[:50]
-            tanda = " 👈 [Aktif]" if idx == len(pasangan) - 1 else ""
-            baris.append(f"#{idx + 1}.{tanda}\n👤 Kamu: {u_s}\n🤖 AI: {a_s}")
+            u_s = html.escape(u_t.replace("\n", " ").strip()[:42])
+            a_s = html.escape(a_t.replace("\n", " ").strip()[:50])
+            tanda = " <code>[AKTIF]</code>" if idx == len(pasangan) - 1 else ""
+            baris.append(f"<b>#{idx + 1}</b>{tanda}\n👤 {u_s}\n🤖 {a_s}")
     if daftar_proj:
-        baris.append(f"─────────────────────────\n📁 ARSIP PROYEK SEBELUMNYA ({len(daftar_proj)} Proyek):")
+        baris.append(f"━━━━━━━━━━━━━━━━━━━━━━\n📁 <b>ARSIP PROYEK</b> ({len(daftar_proj)} Proyek):")
         for p_idx, proj in enumerate(daftar_proj):
-            baris.append(f"📦 Proyek P{p_idx + 1}: {proj['title']} ({len(proj['messages']) // 2} chat - {proj['timestamp']})")
-    baris.append("─────────────────────────\n• Klik ▶️ Lanjut untuk membuka kembali proyek.\n• Klik 🗑️ Hapus untuk menghapus riwayat.")
+            judul = html.escape(proj["title"])
+            baris.append(f"📦 <b>P{p_idx + 1}</b>: {judul} <i>({len(proj['messages']) // 2} chat • {proj['timestamp']})</i>")
+    baris.append("━━━━━━━━━━━━━━━━━━━━━━\n▶️ <b>Lanjut</b> = Pulihkan konteks • 🗑️ <b>Hapus</b> = Buang item")
     return "\n\n".join(baris)
 
 def buat_markup_history(chat_id):
@@ -349,15 +361,15 @@ def buat_markup_history(chat_id):
             InlineKeyboardButton(f"🗑️ Hapus #{idx + 1}", callback_data=f"delhist_{idx}")
         )
     if pasangan:
-        markup.row(InlineKeyboardButton("💾 Simpan Proyek & Mulai Topik Baru", callback_data="archive_new"))
+        markup.row(InlineKeyboardButton("💾 Arsipkan & Mulai Topik Baru", callback_data="archive_new"))
     for p_idx, proj in enumerate(daftar_proj):
         markup.row(
             InlineKeyboardButton(f"📂 Buka P{p_idx + 1} ({proj['title'][:14]})", callback_data=f"resproj_{p_idx}"),
             InlineKeyboardButton(f"🗑️ Hapus P{p_idx + 1}", callback_data=f"delproj_{p_idx}")
         )
     if pasangan or daftar_proj:
-        markup.row(InlineKeyboardButton("🔥 Hapus Semua History & Arsip", callback_data="clear_all_hist"))
-    markup.row(InlineKeyboardButton("🎛 Kembali ke Menu Utama Model", callback_data="back_main"))
+        markup.row(InlineKeyboardButton("🔥 Bersihkan Semua History", callback_data="clear_all_hist"))
+    markup.row(InlineKeyboardButton("🎛 Kembali ke Menu Utama", callback_data="back_main"))
     return markup
 
 def bersihkan_instruksi_sebelumnya(chat_id, user_msg_id=None):
@@ -383,6 +395,10 @@ def catat_pesan_ui(chat_id, msg_obj):
 # 2. KONFIGURASI FOLDER KATEGORI & PENYISIR MODEL OTOMATIS (MODULAR)
 # =========================================================================
 FOLDER_CONFIG = {
+    "alfnnn": {
+        "prefix": "alf_", "label": "ALFNNN AI", "limit": 15, "aliases": ["alfnnn", "alf"],
+        "defaults": ["deepseek-r1", "deepseek-v3", "qwen-2.5-coder-32b-instruct", "gpt-4o", "claude-3-7-sonnet"]
+    },
     "han": {
         "prefix": "han_", "label": "TOKENHAN AI", "limit": 12, "aliases": ["han", "tokenhan"],
         "defaults": ["DeepSeek-R1-Abliterated-7B", "DeepSeek-V4-Flash-0731-uncensored"]
@@ -470,7 +486,11 @@ def sisir_provider(prov_key):
             if res.status_code == 200:
                 data_json = res.json()
                 raw_list = data_json.get("data", data_json) if isinstance(data_json, dict) else data_json
-                ids = [str(m.get("id")) if isinstance(m, dict) else str(m) for m in (raw_list if isinstance(raw_list, list) else []) if (isinstance(m, dict) and m.get("id")) or isinstance(m, str)]
+                ids = [
+                    str(m.get("id")) if isinstance(m, dict) else str(m)
+                    for m in (raw_list if isinstance(raw_list, list) else [])
+                    if (isinstance(m, dict) and m.get("id")) or isinstance(m, str)
+                ]
                 if ids:
                     if prov_key == "zenmux":
                         ZENMUX_ACTIVE_BASE = base
@@ -631,36 +651,36 @@ def ambil_status_kategori(awalan):
     return ("🟢" if aktif > 0 else "🔴"), aktif, len(kumpulan)
 
 # =========================================================================
-# 5. MENU TELEGRAM
+# 5. MENU TELEGRAM (TAMPILAN KEREN & TERSTRUKTUR)
 # =========================================================================
 def buat_menu_utama(mode_aktif, chat_id=None):
     markup = InlineKeyboardMarkup(row_width=2)
     for prov, cfg in FOLDER_CONFIG.items():
         ikon, akt, tot = ambil_status_kategori(cfg["prefix"])
-        markup.row(InlineKeyboardButton(f"{ikon}📂 {cfg['label']} ({akt}/{tot} Aktif)", callback_data=f"cat_{prov}"))
+        markup.row(InlineKeyboardButton(f"{ikon} 📁 {cfg['label']} • {akt}/{tot} 🟢", callback_data=f"cat_{prov}"))
 
     tombol_list = [
-        InlineKeyboardButton(f"{ambil_ikon_status(k, mode_aktif)} {k.upper()} ({info['nama'][:10]})", callback_data=f"lock_{k}")
+        InlineKeyboardButton(f"{ambil_ikon_status(k, mode_aktif)} {k.upper()} • {info['nama'][:9]}", callback_data=f"lock_{k}")
         for k, info in KATALOG_MODEL.items() if not k.startswith(FOLDER_PREFIXES)
     ]
     markup.add(*tombol_list)
 
     jml_h = len(ambil_pasangan_riwayat(chat_id)) if chat_id else 0
     jml_p = len(SAVED_PROJECTS.get(chat_id, [])) if chat_id else 0
-    markup.row(InlineKeyboardButton(f"📜 RIWAYAT & PROYEK ({jml_h} Chat | {jml_p} Arsip)", callback_data="menu_history"))
-    markup.row(InlineKeyboardButton("🔄 CEK ULANG STATUS SEMUA MODEL (PING)", callback_data="ping_all"))
-    markup.row(InlineKeyboardButton(f"{'✅ ' if mode_aktif == 'auto' else '🤖 '}MODE OTOMATIS (Hanya Model 🟢)", callback_data="lock_auto"))
+    markup.row(InlineKeyboardButton(f"📜 Riwayat & Proyek ({jml_h} Chat • {jml_p} Arsip)", callback_data="menu_history"))
+    markup.row(InlineKeyboardButton("🔄 Ping & Cek Kesehatan Semua Model", callback_data="ping_all"))
+    markup.row(InlineKeyboardButton(f"{'✅ ' if mode_aktif == 'auto' else '⚡ '}Mode Otomatis (Smart Auto-Routing)", callback_data="lock_auto"))
     return markup
 
 def buat_submenu_folder(mode_aktif, prov):
     cfg = FOLDER_CONFIG[prov]
     markup = InlineKeyboardMarkup(row_width=2)
     tombol = [
-        InlineKeyboardButton(f"{ambil_ikon_status(k, mode_aktif)} {info['model_id'][:20]}", callback_data=f"lock_{k}")
+        InlineKeyboardButton(f"{ambil_ikon_status(k, mode_aktif)} {info['model_id'][:19]}", callback_data=f"lock_{k}")
         for k, info in KATALOG_MODEL.items() if k.startswith(cfg["prefix"])
     ]
     markup.add(*tombol)
-    markup.row(InlineKeyboardButton("🔄 Cek Status & Sisir Ulang Folder Ini", callback_data=f"refresh_{prov}"))
+    markup.row(InlineKeyboardButton(f"🔄 Sisir Ulang & Ping {cfg['label']}", callback_data=f"refresh_{prov}"))
     markup.row(InlineKeyboardButton("⬅️ Kembali ke Menu Utama", callback_data="back_main"))
     return markup
 
@@ -668,50 +688,69 @@ def buat_tombol_kembali_menu(kode_model):
     markup = InlineKeyboardMarkup()
     for prov, cfg in FOLDER_CONFIG.items():
         if kode_model.startswith(cfg["prefix"]):
-            markup.row(InlineKeyboardButton(f"⬅️ Kembali ke Folder {cfg['label']}", callback_data=f"cat_{prov}"))
+            markup.row(InlineKeyboardButton(f"⬅️ Kembali ke {cfg['label']}", callback_data=f"cat_{prov}"))
             break
-    markup.row(InlineKeyboardButton("🎛 Kembali ke Menu Utama Model", callback_data="back_main"))
+    markup.row(InlineKeyboardButton("🎛 Kembali ke Menu Utama", callback_data="back_main"))
     return markup
 
 def kunci_model_pilihan(chat_id, kode_pilihan):
     WAITING_MODEL_CHOICE[chat_id] = False
     USER_LOCKED_MODEL[chat_id] = kode_pilihan
     if kode_pilihan == "auto":
-        return "🔄 STATUS: MODE OTOMATIS AKTIF\n─────────────────────────\nBot otomatis memilih model 🟢 AKTIF sesuai permintaanmu."
+        return (
+            "⚡ <b>MODE OTOMATIS AKTIF</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "• <b>Routing</b> : Cerdas sesuai jenis tugas\n"
+            "• <b>Filter</b>  : Memprioritaskan model 🟢 Aktif\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "<i>Siap menerima semua instruksi Anda.</i>"
+        )
     info = KATALOG_MODEL[kode_pilihan]
     return (
-        f"🟢🔒 MODEL AKTIF & BERHASIL DIKUNCI!\n─────────────────────────\n"
-        f"🤖 Pekerja Aktif : {info['nama']}\n"
-        f"🆔 ID Model      : {info['model_id']}\n"
-        f"🎯 Fokus Tugas   : {info['tugas']}\n"
-        f"─────────────────────────\n✅ Sekarang HANYA model ini yang melayani pesanmu."
+        f"🔒 <b>MODEL BERHASIL DIKUNCI</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• <b>Pekerja</b> : {html.escape(info['nama'])}\n"
+        f"• <b>Model ID</b>: <code>{html.escape(info['model_id'])}</code>\n"
+        f"• <b>Fokus</b>   : {html.escape(info['tugas'])}\n"
+        f"• <b>Status</b>  : 🟢 Aktif & Terkunci\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"<i>Semua pesan berikutnya akan diproses oleh model ini.</i>"
     )
 
 def teks_menu_utama_str(mode_sekarang):
-    info = "OTOMATIS (Hanya Model 🟢)" if mode_sekarang == "auto" else KATALOG_MODEL.get(mode_sekarang, {}).get("nama", "Unknown")
+    info = "⚡ Mode Otomatis" if mode_sekarang == "auto" else KATALOG_MODEL.get(mode_sekarang, {}).get("nama", "Unknown")
     hijau = sum(1 for k in KATALOG_MODEL if MODEL_HEALTH_CACHE.get(k, {}).get("active", False))
     merah = len(KATALOG_MODEL) - hijau
     return (
-        f"🎛 PUSAT KONTROL & STATUS KESEHATAN AI\n"
-        f"Mode Saat Ini: [{info}]\n"
-        f"Status Global: 🟢 {hijau} Aktif  |  🔴 {merah} Mati\n"
-        f"─────────────────────────\n"
-        f"• 🟢 = Aktif (Klik untuk kunci 🔒)\n"
-        f"• 🔴 = Mati (Klik untuk lihat alasan error)\n"
-        f"─────────────────────────\n👇 Pilih Kategori atau Model:"
+        f"🎛 <b>AI COMMAND CENTER</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• <b>Mode Aktif</b> : {html.escape(info)}\n"
+        f"• <b>Kesehatan</b>  : 🟢 {hijau} Aktif  |  🔴 {merah} Mati\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🟢 Kunci model  •  🔴 Lihat alasan error\n"
+        f"👇 <b>Pilih folder server atau model:</b>"
     )
 
 def teks_submenu_folder_str(prov, mode_sekarang):
     cfg = FOLDER_CONFIG[prov]
-    info = "OTOMATIS" if mode_sekarang == "auto" else KATALOG_MODEL.get(mode_sekarang, {}).get("nama", "Unknown")
+    info = "Mode Otomatis" if mode_sekarang == "auto" else KATALOG_MODEL.get(mode_sekarang, {}).get("nama", "Unknown")
     baris = []
     for k, v in KATALOG_MODEL.items():
         if k.startswith(cfg["prefix"]):
             sehat = MODEL_HEALTH_CACHE.get(k, {})
             ikon = "🟢" if sehat.get("active") else "🔴"
-            ket = "Aktif" if sehat.get("active") else sehat.get("reason", "Belum dicek")[:36]
-            baris.append(f"{ikon}{' 🔒' if k == mode_sekarang else ''} {v['model_id']} — {ket}")
-    return (f"📂 KATEGORI {cfg['label']}\nMode: [{info}]\n─────────────────────────\n" + "\n".join(baris) + "\n─────────────────────────\n👇 Klik 🟢 untuk kunci, 🔴 untuk detail:")[:4000]
+            ket = "Aktif" if sehat.get("active") else sehat.get("reason", "Belum dicek")[:34]
+            gembok = " 🔒" if k == mode_sekarang else ""
+            baris.append(f"{ikon}{gembok} <code>{html.escape(v['model_id'])}</code>\n   <i>└ {html.escape(ket)}</i>")
+    header = (
+        f"📂 <b>{cfg['label']}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• <b>Mode</b> : {html.escape(info)}\n"
+        f"• <b>Endpoint</b>: <code>{html.escape(BASE_URLS.get(prov, 'Multi'))}</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+    )
+    footer = "\n━━━━━━━━━━━━━━━━━━━━━━\n👇 <i>Klik tombol model di bawah untuk mengunci:</i>"
+    return (header + "\n".join(baris) + footer)[:4000]
 
 # =========================================================================
 # 6. EKSEKUTOR PESAN PENGGUNA
@@ -792,12 +831,12 @@ def eksekusi_tunggal(kode_model, user_text, instruksi_khusus=None, chat_id=None)
 
 def kerjakan_gambar(message, prompt_asli):
     bot.send_chat_action(message.chat.id, "upload_photo")
-    msg_wait = bot.reply_to(message, f"🟢🔒 [Model: Flux Uncensored]\n⏳ Merender gambar: {prompt_asli}...")
+    msg_wait = bot.reply_to(message, f"🎨 <b>Flux Uncensored</b>\n⏳ Merender: <code>{html.escape(prompt_asli)}</code>...", parse_mode="HTML")
     url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt_asli)}?model=flux&seed={random.randint(1, 9999999)}&nologo=true&enhance=true"
     try:
         res = HTTP.get(url, timeout=60)
         if res.status_code == 200:
-            bot.send_photo(message.chat.id, res.content, caption=f"🎨 Hasil: {prompt_asli}\n🟢 [Dikerjakan oleh: Flux Uncensored]")
+            bot.send_photo(message.chat.id, res.content, caption=f"🎨 <b>{html.escape(prompt_asli)}</b>\n⚡ <i>Flux Uncensored</i>", parse_mode="HTML")
             try:
                 bot.delete_message(message.chat.id, msg_wait.message_id)
             except Exception:
@@ -809,10 +848,10 @@ def kerjakan_gambar(message, prompt_asli):
 
 def kerjakan_video(message, teks_user):
     bot.send_chat_action(message.chat.id, "typing")
-    msg_wait = bot.reply_to(message, "🟢🔒 [Model: AI Video Director]\n⏳ Menyusun skenario & merender Keyframe...")
+    msg_wait = bot.reply_to(message, "🎬 <b>AI Video Director</b>\n⏳ Menyusun skenario & merender Keyframe...", parse_mode="HTML")
     instruksi = "Kamu AI Video Director. Buatlah: 1. Skenario Visual detik demi detik, 2. Prompt Teknis Bahasa Inggris untuk engine video AI."
     teks_skenario, penulis = "", "Video Director"
-    for k in ["han_0", "han_1", "fajri_0", "fajri_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt"]:
+    for k in ["alf_0", "han_0", "han_1", "fajri_0", "fajri_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt"]:
         if k in KATALOG_MODEL:
             ok, hasil, label = eksekusi_tunggal(k, teks_user, instruksi, message.chat.id)
             if ok:
@@ -822,7 +861,7 @@ def kerjakan_video(message, teks_user):
     try:
         res_img = HTTP.get(frame_url, timeout=45)
         if res_img.status_code == 200:
-            bot.send_photo(message.chat.id, res_img.content, caption="🎬 Preview Keyframe Video (16:9)")
+            bot.send_photo(message.chat.id, res_img.content, caption="🎬 <b>Preview Keyframe Video (16:9)</b>", parse_mode="HTML")
     except Exception:
         pass
     try:
@@ -842,17 +881,20 @@ def handle_start(message):
     chat_id = message.chat.id
     bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
     mode = USER_LOCKED_MODEL.get(chat_id, "auto")
-    ket = "OTOMATIS" if mode == "auto" else f"TERKUNCI [{KATALOG_MODEL.get(mode, {}).get('nama', mode)}]"
+    ket = "⚡ Mode Otomatis" if mode == "auto" else f"🔒 {KATALOG_MODEL.get(mode, {}).get('nama', mode)}"
     msg = bot.send_message(
         chat_id,
-        f"🤖 Bot Multi-Model Ringan (FajriAG + TokenHan + TipRouter + Salin Kode 1-Klik) Siap!\n"
-        f"🔒 Mode Aktif: {ket}\n\n"
-        f"📌 Perintah Utama:\n"
-        f"• /model — Buka menu status 🟢/🔴 & kunci model.\n"
-        f"• /model fajriag — Buka folder FajriAG (deepseek-v4.1-flash-1017-free & glm-5.3-flash).\n"
-        f"• /history — Lihat, hapus, atau lanjutkan proyek lama.\n"
-        f"• /reset — Arsipkan proyek saat ini & mulai topik baru.\n"
-        f"• /kuota — Cek laporan status server."
+        f"⚡ <b>MULTI-AI ROUTER BOT</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• <b>Mode</b> : {html.escape(ket)}\n"
+        f"• <b>Server</b>: Alfnnn • TokenHan • FajriAG • TipRouter\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• <code>/model</code> — Buka menu status & kunci model\n"
+        f"• <code>/model alfnnn</code> — Buka folder Alfnnn AI\n"
+        f"• <code>/history</code> — Kelola & lanjutkan proyek\n"
+        f"• <code>/reset</code> — Arsipkan sesi & mulai topik baru\n"
+        f"• <code>/kuota</code> — Cek status server & API Key",
+        parse_mode="HTML"
     )
     catat_pesan_ui(chat_id, msg)
 
@@ -860,14 +902,18 @@ def handle_start(message):
 def handle_view_history(message):
     chat_id = message.chat.id
     bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
-    catat_pesan_ui(chat_id, bot.send_message(chat_id, teks_menu_history_str(chat_id), reply_markup=buat_markup_history(chat_id)))
+    catat_pesan_ui(chat_id, bot.send_message(chat_id, teks_menu_history_str(chat_id), parse_mode="HTML", reply_markup=buat_markup_history(chat_id)))
 
 @bot.message_handler(commands=["reset", "clear", "new"])
 def handle_reset_history(message):
     chat_id = message.chat.id
     bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
-    teks = "💾 Proyek sebelumnya disimpan ke Arsip History!\n🧹 Memori aktif bersih untuk topik baru." if arsipkan_sesi_ke_proyek(chat_id) else "🧹 Memori percakapan sudah kosong."
-    catat_pesan_ui(chat_id, bot.send_message(chat_id, teks, reply_markup=buat_markup_history(chat_id)))
+    teks = (
+        "💾 <b>Proyek diarsipkan ke History!</b>\n🧹 Memori aktif bersih untuk topik baru."
+        if arsipkan_sesi_ke_proyek(chat_id)
+        else "🧹 <b>Memori percakapan sudah kosong.</b>"
+    )
+    catat_pesan_ui(chat_id, bot.send_message(chat_id, teks, parse_mode="HTML", reply_markup=buat_markup_history(chat_id)))
 
 @bot.message_handler(commands=["model", "cek"])
 def handle_command_model(message):
@@ -877,57 +923,63 @@ def handle_command_model(message):
     arg = re.sub(r"[\(\)\[\]\{\}]", "", message.text.replace("/model", "").replace("/cek", "").strip().lower())
 
     if not arg:
-        msg_w = bot.send_message(chat_id, "🔍 Memuat status 🟢 Aktif / 🔴 Mati model AI...")
+        msg_w = bot.send_message(chat_id, "🔍 <i>Memuat status model AI...</i>", parse_mode="HTML")
         catat_pesan_ui(chat_id, msg_w)
         periksa_kesehatan_serentak()
         WAITING_MODEL_CHOICE[chat_id] = True
-        edit_pesan_aman(teks_menu_utama_str(mode), chat_id, msg_w.message_id, buat_menu_utama(mode, chat_id))
+        edit_pesan_aman(teks_menu_utama_str(mode), chat_id, msg_w.message_id, buat_menu_utama(mode, chat_id), "HTML")
         return
 
     if arg in ["history", "riwayat"]:
-        catat_pesan_ui(chat_id, bot.send_message(chat_id, teks_menu_history_str(chat_id), reply_markup=buat_markup_history(chat_id)))
+        catat_pesan_ui(chat_id, bot.send_message(chat_id, teks_menu_history_str(chat_id), parse_mode="HTML", reply_markup=buat_markup_history(chat_id)))
         return
 
     for prov, cfg in FOLDER_CONFIG.items():
         if arg in cfg["aliases"]:
-            msg_w = bot.send_message(chat_id, f"🔍 Memeriksa kesehatan folder {cfg['label']}...")
+            msg_w = bot.send_message(chat_id, f"🔍 <i>Memeriksa folder {html.escape(cfg['label'])}...</i>", parse_mode="HTML")
             catat_pesan_ui(chat_id, msg_w)
             periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith(cfg["prefix"])], force=True)
-            edit_pesan_aman(teks_submenu_folder_str(prov, mode), chat_id, msg_w.message_id, buat_submenu_folder(mode, prov))
+            edit_pesan_aman(teks_submenu_folder_str(prov, mode), chat_id, msg_w.message_id, buat_submenu_folder(mode, prov), "HTML")
             return
 
     kode = arg if (arg in KATALOG_MODEL or arg == "auto") else next((k for k, v in KATALOG_MODEL.items() if arg in v["model_id"].lower()), None)
     if kode:
         if kode == "auto":
-            catat_pesan_ui(chat_id, bot.send_message(chat_id, kunci_model_pilihan(chat_id, "auto")))
+            catat_pesan_ui(chat_id, bot.send_message(chat_id, kunci_model_pilihan(chat_id, "auto"), parse_mode="HTML"))
             return
-        msg_t = bot.send_message(chat_id, f"🔍 Menguji [{KATALOG_MODEL[kode]['nama']}]...")
+        msg_t = bot.send_message(chat_id, f"🔍 <i>Menguji {html.escape(KATALOG_MODEL[kode]['nama'])}...</i>", parse_mode="HTML")
         catat_pesan_ui(chat_id, msg_t)
         ok, alasan = uji_satu_model_cepat(kode)
         MODEL_HEALTH_CACHE[kode] = {"active": ok, "reason": alasan}
         if ok:
-            edit_pesan_aman(kunci_model_pilihan(chat_id, kode), chat_id, msg_t.message_id)
+            edit_pesan_aman(kunci_model_pilihan(chat_id, kode), chat_id, msg_t.message_id, parse_mode="HTML")
         else:
             info_m = KATALOG_MODEL[kode]
-            edit_pesan_aman(f"🔴 MODEL TIDAK AKTIF\n🤖 {info_m['nama']}\n🆔 {info_m['model_id']}\n⚠️ Sebab: {alasan}", chat_id, msg_t.message_id, buat_tombol_kembali_menu(kode))
+            edit_pesan_aman(
+                f"🔴 <b>MODEL TIDAK AKTIF</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"• <b>Model</b> : {html.escape(info_m['nama'])}\n"
+                f"• <b>ID</b>    : <code>{html.escape(info_m['model_id'])}</code>\n"
+                f"• <b>Sebab</b> : {html.escape(alasan)}",
+                chat_id, msg_t.message_id, buat_tombol_kembali_menu(kode), "HTML"
+            )
     else:
         WAITING_MODEL_CHOICE[chat_id] = True
-        catat_pesan_ui(chat_id, bot.send_message(chat_id, f"❌ Model '{arg}' tidak ditemukan.", reply_markup=buat_menu_utama(mode, chat_id)))
+        catat_pesan_ui(chat_id, bot.send_message(chat_id, f"❌ Model '<code>{html.escape(arg)}</code>' tidak ditemukan.", parse_mode="HTML", reply_markup=buat_menu_utama(mode, chat_id)))
 
 @bot.message_handler(commands=["kuota", "saldo"])
 def handle_cek_kuota(message):
     chat_id = message.chat.id
     bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
-    msg = bot.send_message(chat_id, "🔍 Memeriksa status server & kuota...")
+    msg = bot.send_message(chat_id, "🔍 <i>Memeriksa status server & API Key...</i>", parse_mode="HTML")
     catat_pesan_ui(chat_id, msg)
-    daftar = ["fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
+    daftar = ["alf_0", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "best", "qwen", "deepseek", "luna", "argon", "recursive", "dahl_0", "ter_0", "zm_0"]
     periksa_kesehatan_serentak([k for k in daftar if k in KATALOG_MODEL], force=True)
-    laporan = "📊 LAPORAN KESEHATAN SERVER & KUOTA API\n─────────────────────────\n"
+    laporan = "📊 <b>STATUS SERVER & API KEY</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
     for k in daftar:
         if k in KATALOG_MODEL:
             s = MODEL_HEALTH_CACHE.get(k, {})
-            laporan += f"{'🟢' if s.get('active') else '🔴'} {KATALOG_MODEL[k]['nama']}\n   └ {s.get('reason', 'Belum dicek')}\n"
-    edit_pesan_aman(laporan[:4000], chat_id, msg.message_id)
+            laporan += f"{'🟢' if s.get('active') else '🔴'} <b>{html.escape(KATALOG_MODEL[k]['nama'])}</b>\n   <i>└ {html.escape(s.get('reason', 'Belum dicek'))}</i>\n"
+    edit_pesan_aman(laporan[:4000], chat_id, msg.message_id, parse_mode="HTML")
 
 # =========================================================================
 # 8. CALLBACK HANDLER TOMBOL INLINE
@@ -978,7 +1030,7 @@ def handle_semua_tombol(call):
 
         if data == "menu_history":
             bot.answer_callback_query(call.id, "📜 Membuka riwayat...")
-            edit_pesan_aman(teks_menu_history_str(chat_id), chat_id, msg_id, buat_markup_history(chat_id))
+            edit_pesan_aman(teks_menu_history_str(chat_id), chat_id, msg_id, buat_markup_history(chat_id), "HTML")
         elif data.startswith("reshist_"):
             idx = int(data.replace("reshist_", ""))
             res = lanjutkan_dari_titik_riwayat(chat_id, idx)
@@ -1010,61 +1062,63 @@ def handle_semua_tombol(call):
                     mk.row(InlineKeyboardButton(f"📋 Salin Source Code ({len(blok)} Blok)", callback_data="copy_raw_code"))
                 mk.row(InlineKeyboardButton("📜 Daftar History", callback_data="menu_history"))
                 mk.row(InlineKeyboardButton("🎛 Menu Model", callback_data="back_main"))
-                edit_pesan_aman(f"📂 PROYEK DIPULIHKAN: {proj['title']}\n\n👤 {u_l[:400]}\n\n🤖 {a_l[:2000]}\n\n✅ Ketik pesan untuk melanjutkan!", chat_id, msg_id, mk)
+                edit_pesan_aman(f"📂 <b>PROYEK DIPULIHKAN:</b> {html.escape(proj['title'])}\n\n👤 {html.escape(u_l[:400])}\n\n🤖 {format_ke_html_telegram(a_l[:2000])}\n\n✅ Ketik pesan untuk melanjutkan!", chat_id, msg_id, mk, "HTML")
         elif data == "archive_new":
             arsipkan_sesi_ke_proyek(chat_id)
             bot.answer_callback_query(call.id, "💾 Proyek diarsipkan!")
-            edit_pesan_aman(teks_menu_history_str(chat_id), chat_id, msg_id, buat_markup_history(chat_id))
+            edit_pesan_aman(teks_menu_history_str(chat_id), chat_id, msg_id, buat_markup_history(chat_id), "HTML")
         elif data.startswith("delhist_"):
             hapus_satu_pasangan_riwayat(chat_id, int(data.replace("delhist_", "")))
             bot.answer_callback_query(call.id, "🗑️ Riwayat dihapus!")
-            edit_pesan_aman(teks_menu_history_str(chat_id), chat_id, msg_id, buat_markup_history(chat_id))
+            edit_pesan_aman(teks_menu_history_str(chat_id), chat_id, msg_id, buat_markup_history(chat_id), "HTML")
         elif data.startswith("delproj_"):
             idx = int(data.replace("delproj_", ""))
             if 0 <= idx < len(SAVED_PROJECTS.get(chat_id, [])):
                 SAVED_PROJECTS[chat_id].pop(idx)
             bot.answer_callback_query(call.id, "🗑️ Arsip proyek dihapus!")
-            edit_pesan_aman(teks_menu_history_str(chat_id), chat_id, msg_id, buat_markup_history(chat_id))
+            edit_pesan_aman(teks_menu_history_str(chat_id), chat_id, msg_id, buat_markup_history(chat_id), "HTML")
         elif data == "clear_all_hist":
             CHAT_HISTORY[chat_id], SAVED_PROJECTS[chat_id] = [], []
             bot.answer_callback_query(call.id, "🔥 Semua history dihapus!")
-            edit_pesan_aman(teks_menu_history_str(chat_id), chat_id, msg_id, buat_markup_history(chat_id))
+            edit_pesan_aman(teks_menu_history_str(chat_id), chat_id, msg_id, buat_markup_history(chat_id), "HTML")
         elif data == "ping_all":
             bot.answer_callback_query(call.id, "🔄 Mengecek ulang semua server...")
             periksa_kesehatan_serentak(force=True)
-            edit_pesan_aman(teks_menu_utama_str(mode), chat_id, msg_id, buat_menu_utama(mode, chat_id))
+            edit_pesan_aman(teks_menu_utama_str(mode), chat_id, msg_id, buat_menu_utama(mode, chat_id), "HTML")
         elif data == "back_main":
-            edit_pesan_aman(teks_menu_utama_str(mode), chat_id, msg_id, buat_menu_utama(mode, chat_id))
+            edit_pesan_aman(teks_menu_utama_str(mode), chat_id, msg_id, buat_menu_utama(mode, chat_id), "HTML")
         elif data.startswith("cat_"):
             prov = data.replace("cat_", "")
             if prov in FOLDER_CONFIG:
-                edit_pesan_aman(teks_submenu_folder_str(prov, mode), chat_id, msg_id, buat_submenu_folder(mode, prov))
+                edit_pesan_aman(teks_submenu_folder_str(prov, mode), chat_id, msg_id, buat_submenu_folder(mode, prov), "HTML")
         elif data.startswith("refresh_"):
             prov = data.replace("refresh_", "")
             if prov in FOLDER_CONFIG:
                 bot.answer_callback_query(call.id, f"🔄 Menyisir & cek {FOLDER_CONFIG[prov]['label']}...")
                 segarkan_folder_kategori(prov)
                 periksa_kesehatan_serentak([k for k in KATALOG_MODEL if k.startswith(FOLDER_CONFIG[prov]["prefix"])], force=True)
-                edit_pesan_aman(teks_submenu_folder_str(prov, mode), chat_id, msg_id, buat_submenu_folder(mode, prov))
+                edit_pesan_aman(teks_submenu_folder_str(prov, mode), chat_id, msg_id, buat_submenu_folder(mode, prov), "HTML")
         elif data.startswith("lock_"):
             kode = data.replace("lock_", "")
             if kode == "auto":
-                bot.answer_callback_query(call.id, "🔄 Mode Otomatis Aktif!")
-                edit_pesan_aman(kunci_model_pilihan(chat_id, "auto"), chat_id, msg_id)
+                bot.answer_callback_query(call.id, "⚡ Mode Otomatis Aktif!")
+                edit_pesan_aman(kunci_model_pilihan(chat_id, "auto"), chat_id, msg_id, parse_mode="HTML")
             elif kode in KATALOG_MODEL:
                 ok, alasan = uji_satu_model_cepat(kode)
                 MODEL_HEALTH_CACHE[kode] = {"active": ok, "reason": alasan}
                 info_m = KATALOG_MODEL[kode]
                 if ok:
                     bot.answer_callback_query(call.id, f"🟢 AKTIF! Terkunci: {info_m['model_id'][:20]}")
-                    edit_pesan_aman(kunci_model_pilihan(chat_id, kode), chat_id, msg_id)
+                    edit_pesan_aman(kunci_model_pilihan(chat_id, kode), chat_id, msg_id, parse_mode="HTML")
                 else:
                     bot.answer_callback_query(call.id, f"🔴 MATI!\n{info_m['model_id']}\nSebab: {alasan}"[:195], show_alert=True)
                     edit_pesan_aman(
-                        f"🔴 LAPORAN MODEL TIDAK AKTIF\n─────────────────────────\n"
-                        f"🤖 Model    : {info_m['nama']}\n🆔 ID Model : {info_m['model_id']}\n"
-                        f"📋 Penyebab : {alasan}\n─────────────────────────\n💡 Pilih model lain yang berwarna 🟢 HIJAU.",
-                        chat_id, msg_id, buat_tombol_kembali_menu(kode)
+                        f"🔴 <b>MODEL TIDAK AKTIF</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"• <b>Model</b> : {html.escape(info_m['nama'])}\n"
+                        f"• <b>ID</b>    : <code>{html.escape(info_m['model_id'])}</code>\n"
+                        f"• <b>Sebab</b> : {html.escape(alasan)}\n━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"💡 <i>Pilih model lain yang berwarna 🟢 HIJAU.</i>",
+                        chat_id, msg_id, buat_tombol_kembali_menu(kode), "HTML"
                     )
     except Exception as e:
         print(f"Callback error: {e}")
@@ -1096,14 +1150,14 @@ def handle_pesan_utama(message):
         if kode:
             bersihkan_instruksi_sebelumnya(chat_id, message.message_id)
             if kode == "auto":
-                catat_pesan_ui(chat_id, bot.send_message(chat_id, kunci_model_pilihan(chat_id, "auto")))
+                catat_pesan_ui(chat_id, bot.send_message(chat_id, kunci_model_pilihan(chat_id, "auto"), parse_mode="HTML"))
                 return
             ok, alasan = uji_satu_model_cepat(kode)
             MODEL_HEALTH_CACHE[kode] = {"active": ok, "reason": alasan}
             if ok:
-                catat_pesan_ui(chat_id, bot.send_message(chat_id, kunci_model_pilihan(chat_id, kode)))
+                catat_pesan_ui(chat_id, bot.send_message(chat_id, kunci_model_pilihan(chat_id, kode), parse_mode="HTML"))
             else:
-                catat_pesan_ui(chat_id, bot.send_message(chat_id, f"🔴 [{KATALOG_MODEL[kode]['nama']}] MATI!\nSebab: {alasan}", reply_markup=buat_tombol_kembali_menu(kode)))
+                catat_pesan_ui(chat_id, bot.send_message(chat_id, f"🔴 <b>{html.escape(KATALOG_MODEL[kode]['nama'])}</b> MATI!\n<i>Sebab: {html.escape(alasan)}</i>", parse_mode="HTML", reply_markup=buat_tombol_kembali_menu(kode)))
             return
         WAITING_MODEL_CHOICE[chat_id] = False
 
@@ -1133,11 +1187,11 @@ def handle_pesan_utama(message):
 
     bot.send_chat_action(chat_id, "typing")
     if tugas == "koding":
-        antrean, label = ["fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "qwen", "argon", "recursive"], "Auto - Koding"
+        antrean, label = ["fajri_0", "fajri_1", "han_0", "han_1", "alf_0", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "chatgpt", "dahl_0", "zm_0", "deepseek", "vascoo", "qwen", "argon", "recursive"], "Auto • Koding"
     elif tugas == "recursive":
-        antrean, label = ["recursive", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "ter_0", "best"], "Auto - Recursive"
+        antrean, label = ["recursive", "alf_0", "fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "chatgpt", "dahl_0", "ter_0", "best"], "Auto • Recursive"
     else:
-        antrean, label = ["fajri_0", "fajri_1", "han_0", "han_1", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto - Teks Uncensored"
+        antrean, label = ["fajri_0", "fajri_1", "han_0", "han_1", "alf_0", "indo_0", "tip_0", "orca_0", "masb_0", "rv_0", "bk_0", "ok_0", "gonka_0", "itera", "vascoo", "dahl_0", "ter_0", "chatgpt", "qwen", "zm_0", "luna", "deepseek", "recursive"], "Auto • Teks Uncensored"
 
     for kode in antrean:
         if kode in KATALOG_MODEL and KEYS.get(KATALOG_MODEL[kode]["provider"]):
