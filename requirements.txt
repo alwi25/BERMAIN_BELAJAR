@@ -1,3 +1,5 @@
 pyTelegramBotAPI
 openai
 requests
+urllib3
+google-genai
