@@ -7,17 +7,14 @@ import random
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
-import urllib3
 import telebot
 from telebot import apihelper
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from google import genai
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Session HTTP bersama agar lebih ringan & cepat
 HTTP = requests.Session()
-HTTP.verify = False
 HTTP.headers.update({"User-Agent": "Mozilla/5.0"})
 
 # 1. Kredensial Murni dari GitHub Secrets
