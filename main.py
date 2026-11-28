@@ -418,7 +418,7 @@ FOLDER_CONFIG = {
     },
     "indo": {
         "prefix": "indo_", "label": "INDOSMART", "limit": 12, "aliases": ["indo", "indosmart"],
-        "defaults": ["qwen3-14b-abliterated", "qwen-uncensored", "deepseek-r1", "deepseek-v3"]
+        "defaults": ["deepseek-v4.1-flash-1017-abliterated", "qwen3-14b-abliterated", "qwen-uncensored", "deepseek-r1", "deepseek-v3"]
     },
     "tip": {
         "prefix": "tip_", "label": "TIPROUTER", "limit": 30, "aliases": ["tip", "tiprouter"],
